@@ -33,7 +33,15 @@ Deliberate focuses on **researching the deliberation process itself** rather tha
 
 ## Overview
 
-Deliberate is an experimental research tool for studying how multiple LLMs can deliberate on questions, rank each other's responses, and reach consensus. It implements several aggregation algorithms from social choice theory:
+Deliberate is an experimental research tool for studying multi-model responses, ranking/judging behavior, and (optionally) **multi-round deliberation with convergence detection**.
+
+You can use it in a few common modes:
+
+- **Responses-only:** collect and compare raw model answers side-by-side
+- **Rankings + aggregation:** have models rank each other, then compare formal voting methods on the same set of judgments
+- **Multi-round deliberation:** run iterative rounds where models see peer responses and revise their own; the job can stop early if responses converge
+
+For the aggregation layer, Deliberate implements several algorithms from social choice theory:
 
 - **Plurality** — Simple first-place vote counting
 - **Borda Count** — Positional voting with points for each rank
@@ -187,7 +195,7 @@ Multi-round deliberation creates new "rounds" where models see the other respons
 - Click **Deliberate**
 - Select the council models (the UI shows the total API calls: e.g., "3 models × 3 rounds = 9 API calls")
 - Pick **Maximum Rounds** (2–3 recommended to start)
-- Start the job and monitor progress (the UI polls status with real-time updates)
+- Start the job and monitor progress (the UI streams status updates in real time)
 - Deliberation may stop early if models converge on similar answers
 
 After completion:
