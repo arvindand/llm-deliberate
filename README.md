@@ -367,4 +367,4 @@ Locks in pairwise preferences from strongest to weakest, skipping any that would
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT License - See [LICENSE](LICENSE) for details.
