@@ -74,7 +74,7 @@ In our experiments, a few patterns emerged:
 - Python 3.10+
 - Node.js 18+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- OpenRouter API key (optional, for automated collection)
+- OpenRouter API key (recommended, for automated collection)
 
 ### Installation
 
@@ -92,7 +92,7 @@ npm install
 cd ..
 ```
 
-### Configuration (Optional - for Automated Collection)
+### Configuration (Recommended - for Automated Collection)
 
 To enable automated response and ranking collection via OpenRouter API:
 
@@ -118,7 +118,7 @@ Best practices:
 - Start with 1-2 models to test
 - Use 1-3 rounds initially
 - Monitor your OpenRouter balance
-- Be especially careful with expensive models (GPT-4, Claude Opus, etc.)
+- Be especially careful with expensive models (GPT-5, Claude Opus, etc.)
 
 ### Running the Application
 
