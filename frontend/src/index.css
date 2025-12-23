@@ -1,0 +1,394 @@
+@import "tailwindcss";
+
+/* === Tailwind v4 CSS-first theme configuration === */
+@theme {
+  /* Custom colors - warm, scholarly palette */
+  --color-cream: #F7F3E9;
+  --color-parchment: #EDE8DB;
+  --color-ink: #1C1917;
+  --color-sepia: #704214;
+  --color-rust: #A0522D;
+  --color-sage: #5F7161;
+  --color-slate: #4A5568;
+
+  /* Custom fonts */
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Source Serif 4", Georgia, serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+
+  /* Custom animations */
+  --animate-fade-in: fade-in 0.5s ease-out;
+  --animate-slide-up: slide-up 0.4s ease-out;
+  --animate-pulse-subtle: pulse-subtle 2s ease-in-out infinite;
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+    }
+
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse-subtle {
+
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.8;
+    }
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scholarly paper texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  z-index: 1000;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-parchment);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-sepia);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-rust);
+}
+
+/* Selection color */
+::selection {
+  background: rgba(112, 66, 20, 0.2);
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid var(--color-sepia);
+  outline-offset: 2px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+
+/* Staggered animations for lists */
+.stagger-1 {
+  animation-delay: 0.1s;
+}
+
+.stagger-2 {
+  animation-delay: 0.2s;
+}
+
+.stagger-3 {
+  animation-delay: 0.3s;
+}
+
+.stagger-4 {
+  animation-delay: 0.4s;
+}
+
+.stagger-5 {
+  animation-delay: 0.5s;
+}
+
+/* Card styles */
+.card {
+  background: white;
+  border: 1px solid rgba(112, 66, 20, 0.15);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(112, 66, 20, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.06),
+    0 8px 24px rgba(112, 66, 20, 0.1);
+}
+
+/* Button styles */
+.btn {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 500;
+  padding: 0.625rem 1.25rem;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--color-sepia);
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: var(--color-rust);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--color-sepia);
+  border: 1px solid var(--color-sepia);
+}
+
+.btn-secondary:hover {
+  background: var(--color-sepia);
+  color: white;
+}
+
+/* Input styles */
+input,
+textarea,
+select {
+  font-family: 'Source Serif 4', Georgia, serif;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid rgba(112, 66, 20, 0.25);
+  border-radius: 4px;
+  background: white;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-sepia);
+  box-shadow: 0 0 0 3px rgba(112, 66, 20, 0.1);
+  outline: none;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* Model badges */
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+  /* Default fallback colors for unknown providers */
+  background: #ECEFF1;
+  color: #455A64;
+}
+
+.model-badge.openai {
+  background: #E8F5E9;
+  color: #1B5E20;
+}
+
+.model-badge.gpt {
+  background: #E8F5E9;
+  color: #1B5E20;
+}
+
+.model-badge.anthropic {
+  background: #FFF3E0;
+  color: #BF360C;
+}
+
+.model-badge.claude {
+  background: #FFF3E0;
+  color: #BF360C;
+}
+
+.model-badge.google {
+  background: #E3F2FD;
+  color: #0D47A1;
+}
+
+.model-badge.gemini {
+  background: #E3F2FD;
+  color: #0D47A1;
+}
+
+.model-badge.meta {
+  background: #F3E5F5;
+  color: #6A1B9A;
+}
+
+.model-badge.llama {
+  background: #F3E5F5;
+  color: #6A1B9A;
+}
+
+.model-badge.mistralai {
+  background: #FFE8E8;
+  color: #B71C1C;
+}
+
+.model-badge.mistral {
+  background: #FFE8E8;
+  color: #B71C1C;
+}
+
+.model-badge.deepseek {
+  background: #E0F2F1;
+  color: #004D40;
+}
+
+.model-badge.x-ai {
+  background: #F5F5F5;
+  color: #212121;
+}
+
+.model-badge.xai {
+  background: #F5F5F5;
+  color: #212121;
+}
+
+.model-badge.cohere {
+  background: #FFF9C4;
+  color: #BF360C;
+}
+
+.model-badge.perplexity {
+  background: #E8EAF6;
+  color: #283593;
+}
+
+.model-badge.qwen {
+  background: #FCE4EC;
+  color: #AD1457;
+}
+
+/* Ranking indicator */
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.rank-badge.gold {
+  background: #FFA500;
+  color: #3E2723;
+}
+
+.rank-badge.silver {
+  background: #9E9E9E;
+  color: #212121;
+}
+
+.rank-badge.bronze {
+  background: #8D6E63;
+  color: white;
+}
+
+/* Method comparison bars */
+.score-bar {
+  height: 0.5rem;
+  background: rgba(112, 66, 20, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-sepia), var(--color-rust));
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+/* Decorative elements */
+.flourish {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--color-sepia);
+  opacity: 0.6;
+}
+
+.flourish::before,
+.flourish::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+}
