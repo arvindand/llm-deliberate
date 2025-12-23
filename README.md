@@ -1,6 +1,6 @@
 # LLM Deliberate
 
-**A research tool for exploring multi-model LLM deliberation and aggregation methods.**
+**An experimentation tool for exploring multi-model LLM deliberation and aggregation methods.**
 
 > Inspired by [Andrej Karpathy's llm-council](https://github.com/karpathy/llm-council)
 
@@ -8,7 +8,7 @@
 
 ## ⚠️ Maintenance Disclaimer
 
-**This is a research tool and experimental project.** Like Karpathy's original llm-council, this is primarily a "vibe coded" exploration of LLM deliberation methods. While functional and documented, **this project will not be actively maintained**. The code is provided as-is for inspiration, learning, and further experimentation.
+**This is an experimentation tool and experimental project.** Like Karpathy's original llm-council, this is primarily a "vibe coded" exploration of LLM deliberation methods. While functional and documented, **this project will not be actively maintained**. The code is provided as-is for inspiration, learning, and further experimentation.
 
 Feel free to fork and modify it for your own research needs!
 
@@ -18,7 +18,7 @@ While inspired by Karpathy's llm-council, Deliberate takes a different approach:
 
 | Feature | llm-council | Deliberate |
 | ------- | ----------- | ---------- |
-| **Purpose** | Chat interface with synthesized final answer | Research tool for studying aggregation methods |
+| **Purpose** | Chat interface with synthesized final answer | Experimentation tool for studying aggregation methods |
 | **Output** | Single "Chairman" synthesized response | Side-by-side comparison of 5 voting algorithms |
 | **Deliberation** | Single round + review | Multi-round iterative refinement |
 | **Analysis** | Rankings displayed | Agreement matrices, cost dashboards, export to CSV/JSON |
@@ -33,7 +33,7 @@ Deliberate focuses on **researching the deliberation process itself** rather tha
 
 ## Overview
 
-Deliberate is an experimental research tool for studying multi-model responses, ranking/judging behavior, and (optionally) **multi-round deliberation with convergence detection**.
+Deliberate is an experimental tool for studying multi-model responses, ranking/judging behavior, and (optionally) **multi-round deliberation with convergence detection**.
 
 You can use it in a few common modes:
 
