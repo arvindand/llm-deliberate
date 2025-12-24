@@ -8,7 +8,7 @@
 
 ## ⚠️ Maintenance Disclaimer
 
-**This is an experimentation tool and experimental project.** Like Karpathy's original llm-council, this is primarily a "vibe coded" exploration of LLM deliberation methods. While functional and documented, **this project will not be actively maintained**. The code is provided as-is for inspiration, learning, and further experimentation.
+**This is an experimentation tool and experimental project.** Like Karpathy's original llm-council, this is primarily a exploration of LLM deliberation methods. While functional and documented, **this project will not be actively maintained**. The code is provided as-is for inspiration, learning, and further experimentation.
 
 Feel free to fork and modify it for your own research needs!
 
@@ -143,7 +143,7 @@ Then open <http://localhost:5173>
 
 ## Demo (Multi‑Round Deliberation)
 
-Deliberate ships with a ready-to-open multi-round deliberation demo at
+A multi-round deliberation demo is available at
 [data/experiments/demo_showcase.json](data/experiments/demo_showcase.json).
 
 1. Start the app (see "Running the Application" above)
