@@ -3,6 +3,7 @@ import PropTypes from 'prop-types'
 import { Zap, Loader, AlertCircle, CheckCircle, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { estimateTokenCost } from './costs'
 
 const API_BASE = '/api'
 
@@ -74,7 +75,7 @@ const MARKDOWN_COMPONENTS = {
   code: ({ inline, children, ...props }) => {
     if (inline) {
       return (
-        <code {...props} className="bg-slate/5 px-1 rounded text-xs font-mono">
+        <code {...props} className="bg-slate/10 px-1 rounded text-xs font-mono">
           {children}
         </code>
       )
@@ -86,7 +87,7 @@ const MARKDOWN_COMPONENTS = {
     )
   },
   pre: ({ children, ...props }) => (
-    <pre {...props} className="bg-slate/5 p-3 rounded text-xs font-mono overflow-x-auto my-2">
+    <pre {...props} className="bg-slate/10 p-3 rounded text-xs font-mono overflow-x-auto my-2">
       {children}
     </pre>
   ),
@@ -328,9 +329,7 @@ export function AutomatedResponseForm({ experimentId, questionId, question, onJo
     return selectedModels.reduce((sum, modelId) => {
       const model = availableModels.find(m => m.id === modelId)
       if (!model?.pricing) return sum
-      const inputCost = (questionTokens / 1000000) * model.pricing.prompt
-      const outputCost = (avgResponseTokens / 1000000) * model.pricing.completion
-      return sum + inputCost + outputCost
+      return sum + estimateTokenCost(model.pricing, questionTokens, avgResponseTokens)
     }, 0)
   }, [selectedModels, question?.text, availableModels])
 
@@ -419,7 +418,7 @@ export function AutomatedResponseForm({ experimentId, questionId, question, onJo
   }, [availableModels, selectedProvider])
 
   return (
-    <div className="mb-4 p-4 bg-gradient-to-br from-white to-parchment/30 rounded-lg border border-sepia/20 shadow-sm animate-slide-up">
+    <div className="mb-4 p-4 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-secondary)]/30 rounded-lg border border-sepia/20 shadow-sm animate-slide-up">
       {jobInProgress ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -443,7 +442,7 @@ export function AutomatedResponseForm({ experimentId, questionId, question, onJo
           </div>
 
           {jobStatus?.progress && (
-            <div className="bg-white rounded-lg p-3">
+            <div className="bg-[var(--bg-card)] rounded-lg p-3">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-slate">Progress</span>
                 <span className="font-mono text-ink">
@@ -480,7 +479,7 @@ export function AutomatedResponseForm({ experimentId, questionId, question, onJo
               <div className="text-xs font-semibold text-slate mb-2">Received so far</div>
               <div className="flex flex-wrap gap-2">
                 {partialResults.slice(0, 12).map(item => (
-                  <span key={item.id} className="text-xs px-2 py-1 rounded bg-white border border-sepia/20 text-ink">
+                  <span key={item.id} className="text-xs px-2 py-1 rounded bg-[var(--bg-card)] border border-sepia/20 text-ink">
                     {item.model || item.id}
                   </span>
                 ))}
@@ -502,13 +501,13 @@ export function AutomatedResponseForm({ experimentId, questionId, question, onJo
               </div>
             ) : (
               <>
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex flex-nowrap gap-2 mb-3 overflow-x-auto pb-1">
                   {providers.map(provider => (
                     <button
                       key={provider}
                       type="button"
                       onClick={() => handleProviderFilter(provider)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${selectedProvider === provider
+                      className={`text-xs px-2 py-1 rounded shrink-0 whitespace-nowrap transition-colors ${selectedProvider === provider
                         ? 'bg-sepia text-white'
                         : 'bg-sepia/10 hover:bg-sepia/20 text-sepia'
                         }`}
@@ -537,8 +536,14 @@ export function AutomatedResponseForm({ experimentId, questionId, question, onJo
                         </div>
                         {model.pricing && (
                           <div className="text-xs text-slate">
-                            ${(model.pricing.prompt * 1000).toFixed(3)}/1K in ·
-                            ${(model.pricing.completion * 1000).toFixed(3)}/1K out
+                            {model.pricing_unknown ? (
+                              'Variable pricing'
+                            ) : (
+                              <>
+                                ${(model.pricing.prompt * 1000).toFixed(3)}/1K in ·
+                                ${(model.pricing.completion * 1000).toFixed(3)}/1K out
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -739,7 +744,7 @@ export function AutomatedRankingForm({ experimentId, questionId, question, onJob
   }, [availableModels, selectedProvider])
 
   return (
-    <div className="mb-4 p-4 bg-gradient-to-br from-white to-parchment/30 rounded-lg border border-sepia/20 shadow-sm animate-slide-up">
+    <div className="mb-4 p-4 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-secondary)]/30 rounded-lg border border-sepia/20 shadow-sm animate-slide-up">
       {jobInProgress ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -763,7 +768,7 @@ export function AutomatedRankingForm({ experimentId, questionId, question, onJob
           </div>
 
           {jobStatus?.progress && (
-            <div className="bg-white rounded-lg p-3">
+            <div className="bg-[var(--bg-card)] rounded-lg p-3">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-slate">Progress</span>
                 <span className="font-mono text-ink">
@@ -800,7 +805,7 @@ export function AutomatedRankingForm({ experimentId, questionId, question, onJob
               <div className="text-xs font-semibold text-slate mb-2">Collected so far</div>
               <div className="flex flex-wrap gap-2">
                 {partialResults.slice(0, 12).map(item => (
-                  <span key={item.id} className="text-xs px-2 py-1 rounded bg-white border border-sepia/20 text-ink">
+                  <span key={item.id} className="text-xs px-2 py-1 rounded bg-[var(--bg-card)] border border-sepia/20 text-ink">
                     {item.judge || item.id}
                   </span>
                 ))}
@@ -832,13 +837,13 @@ export function AutomatedRankingForm({ experimentId, questionId, question, onJob
                   </button>
                 )}
 
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex flex-nowrap gap-2 mb-3 overflow-x-auto pb-1">
                   {providers.map(provider => (
                     <button
                       key={provider}
                       type="button"
                       onClick={() => handleProviderFilter(provider)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${selectedProvider === provider
+                      className={`text-xs px-2 py-1 rounded shrink-0 whitespace-nowrap transition-colors ${selectedProvider === provider
                         ? 'bg-sepia text-white'
                         : 'bg-sepia/10 hover:bg-sepia/20 text-sepia'
                         }`}
@@ -939,7 +944,7 @@ export function ResponseCard({ response, index }) {
   const isTruncated = (response.content || '').length > 300
 
   return (
-    <div className="bg-white rounded-lg border border-sepia/20 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-[var(--bg-card)] rounded-lg border border-sepia/20 shadow-sm hover:shadow-md transition-shadow">
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -1034,9 +1039,7 @@ export function AutomatedDeliberationForm({ experimentId, questionId, question, 
     return selectedModels.reduce((sum, modelId) => {
       const model = availableModels.find(m => m.id === modelId)
       if (!model?.pricing) return sum
-      const inputCost = (questionTokens / 1000000) * model.pricing.prompt
-      const outputCost = (avgResponseTokens / 1000000) * model.pricing.completion
-      return sum + (inputCost + outputCost) * maxRounds
+      return sum + estimateTokenCost(model.pricing, questionTokens, avgResponseTokens) * maxRounds
     }, 0)
   }, [availableModels, maxRounds, question?.text, selectedModels])
 
@@ -1146,7 +1149,7 @@ export function AutomatedDeliberationForm({ experimentId, questionId, question, 
   const deliberationStatus = getDeliberationStatus(jobStatus, maxRounds)
 
   return (
-    <div className="mb-4 p-4 bg-gradient-to-br from-white to-parchment/30 rounded-lg border border-sepia/20 shadow-sm animate-slide-up">
+    <div className="mb-4 p-4 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-secondary)]/30 rounded-lg border border-sepia/20 shadow-sm animate-slide-up">
       {jobInProgress ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -1167,7 +1170,7 @@ export function AutomatedDeliberationForm({ experimentId, questionId, question, 
           </div>
 
           {jobStatus?.progress && !jobStatus.progress.converged && (
-            <div className="bg-white rounded-lg p-3">
+            <div className="bg-[var(--bg-card)] rounded-lg p-3">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-slate">
                   Round {jobStatus.progress.round || 1} of {maxRounds}
@@ -1215,12 +1218,12 @@ export function AutomatedDeliberationForm({ experimentId, questionId, question, 
               </div>
             ) : (
               <>
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex flex-nowrap gap-2 mb-3 overflow-x-auto pb-1">
                   {providers.map(provider => (
                     <button
                       key={provider}
                       onClick={() => handleProviderFilter(provider)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${selectedProvider === provider
+                      className={`text-xs px-2 py-1 rounded shrink-0 whitespace-nowrap transition-colors ${selectedProvider === provider
                         ? 'bg-sepia text-white'
                         : 'bg-sepia/10 hover:bg-sepia/20 text-sepia'
                         }`}
@@ -1249,8 +1252,14 @@ export function AutomatedDeliberationForm({ experimentId, questionId, question, 
                         </div>
                         {model.pricing && (
                           <div className="text-xs text-slate">
-                            ${(model.pricing.prompt * 1000).toFixed(3)}/1K in ·
-                            ${(model.pricing.completion * 1000).toFixed(3)}/1K out
+                            {model.pricing_unknown ? (
+                              'Variable pricing'
+                            ) : (
+                              <>
+                                ${(model.pricing.prompt * 1000).toFixed(3)}/1K in ·
+                                ${(model.pricing.completion * 1000).toFixed(3)}/1K out
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1369,7 +1378,7 @@ export function TabbedRoundView({ roundGroups }) {
   const activeGroup = roundGroups.find(g => g.round === activeRound)
 
   return (
-    <div className="border border-sepia/10 rounded-lg overflow-hidden bg-white shadow-sm">
+    <div className="border border-sepia/10 rounded-lg overflow-hidden bg-[var(--bg-card)] shadow-sm">
       {/* Horizontal Tab Bar */}
       <div className="flex border-b border-sepia/10 bg-parchment/20 overflow-x-auto scrollbar-thin">
         {roundGroups.map(group => {
@@ -1513,7 +1522,7 @@ export function AgreementMatrixHeatmap({ experimentId, questionId, onClose }) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <Loader className="w-8 h-8 animate-spin text-sepia" />
       </div>
     )
@@ -1521,8 +1530,8 @@ export function AgreementMatrixHeatmap({ experimentId, questionId, onClose }) {
 
   if (error) {
     return (
-      <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="card p-6 rounded-xl max-w-md">
+      <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="card p-6 rounded-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <div className="flex items-center gap-2 text-rust mb-3">
             <AlertCircle className="w-5 h-5" />
             <span className="font-semibold">Error</span>
@@ -1551,16 +1560,16 @@ export function AgreementMatrixHeatmap({ experimentId, questionId, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
-      <div className="card rounded-2xl w-full max-w-5xl animate-slide-up max-h-[90vh] flex flex-col">
+      <div className="card rounded-2xl w-full max-w-5xl animate-slide-up max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-sepia/10 flex-shrink-0">
-          <h2 className="font-display text-2xl font-semibold text-ink mb-3">
+        <div className="p-4 sm:p-6 border-b border-sepia/10 flex-shrink-0">
+          <h2 className="font-display text-xl sm:text-2xl font-semibold text-ink mb-2 sm:mb-3">
             Ranking Agreement (Judges)
           </h2>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate">Diversity Score:</span>
-              <span className="text-lg font-mono font-semibold text-sepia">
+              <span className="text-xs sm:text-sm text-slate">Diversity Score:</span>
+              <span className="text-base sm:text-lg font-mono font-semibold text-sepia">
                 {(data.diversity_score * 100).toFixed(1)}%
               </span>
             </div>
@@ -1571,19 +1580,19 @@ export function AgreementMatrixHeatmap({ experimentId, questionId, onClose }) {
         </div>
 
         {/* Matrix Content */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="overflow-x-auto">
-            <table className="border-collapse">
+        <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-6">
+          <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 touch-manual-scroll">
+            <table className="border-collapse agreement-matrix-table">
               <thead>
                 <tr>
-                  <th className="p-2"></th>
+                  <th className="p-1 sm:p-2"></th>
                   {data.judges.map((judge) => (
-                    <th key={judge} className="p-2">
+                    <th key={judge} className="p-1 sm:p-2">
                       <div
-                        className="text-xs font-semibold text-slate transform -rotate-45 origin-bottom-left whitespace-nowrap"
-                        style={{ height: '120px', width: '120px' }}
+                        className="text-[10px] sm:text-xs font-semibold text-slate transform -rotate-45 origin-bottom-left whitespace-nowrap agreement-matrix-header"
+                        title={judge}
                       >
-                        <div title={judge}>{judge}</div>
+                        <div className="truncate">{judge}</div>
                       </div>
                     </th>
                   ))}
@@ -1592,13 +1601,13 @@ export function AgreementMatrixHeatmap({ experimentId, questionId, onClose }) {
               <tbody>
                 {data.judges.map((judge1, i) => (
                   <tr key={judge1}>
-                    <td className="p-2 text-xs font-semibold text-slate max-w-[240px] truncate" title={judge1}>
+                    <td className="p-1 sm:p-2 text-[10px] sm:text-xs font-semibold text-slate max-w-[120px] sm:max-w-[240px] truncate" title={judge1}>
                       {judge1}
                     </td>
                     {data.judges.map((judge2, j) => (
                       <td key={`${judge1}-${judge2}`} className="p-0">
                         <div
-                          className="w-20 h-20 flex items-center justify-center text-xs font-mono font-semibold border border-white/50 cursor-help transition-transform hover:scale-105"
+                          className="agreement-matrix-cell flex items-center justify-center text-[10px] sm:text-xs font-mono font-semibold border border-white/50 cursor-help transition-transform hover:scale-105 text-black"
                           style={{ backgroundColor: getHeatmapColor(data.matrix[i][j]) }}
                           title={`${judge1} vs ${judge2}: ${(data.matrix[i][j] * 100).toFixed(1)}% agreement`}
                         >
@@ -1613,40 +1622,40 @@ export function AgreementMatrixHeatmap({ experimentId, questionId, onClose }) {
           </div>
 
           {/* Legend and Explanation */}
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <div className="p-4 bg-parchment/30 rounded-lg">
-              <h4 className="text-sm font-semibold text-ink mb-2">Color Legend</h4>
-              <div className="space-y-1 text-xs">
+          <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="p-3 sm:p-4 bg-parchment/30 rounded-lg">
+              <h4 className="text-xs sm:text-sm font-semibold text-ink mb-2">Color Legend</h4>
+              <div className="space-y-1 text-[10px] sm:text-xs">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded" style={{ backgroundColor: getHeatmapColor(1) }}></div>
-                  <span className="text-slate">100% agreement (judges ranked identically)</span>
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded" style={{ backgroundColor: getHeatmapColor(1) }}></div>
+                  <span className="text-slate">100% agreement (identical rankings)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded" style={{ backgroundColor: getHeatmapColor(0.5) }}></div>
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded" style={{ backgroundColor: getHeatmapColor(0.5) }}></div>
                   <span className="text-slate">50% agreement</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded" style={{ backgroundColor: getHeatmapColor(0) }}></div>
-                  <span className="text-slate">0% agreement (completely opposite rankings)</span>
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded" style={{ backgroundColor: getHeatmapColor(0) }}></div>
+                  <span className="text-slate">0% agreement (opposite rankings)</span>
                 </div>
               </div>
             </div>
 
-            <div className="p-4 bg-parchment/30 rounded-lg">
-              <h4 className="text-sm font-semibold text-ink mb-2">How to Interpret</h4>
-              <ul className="text-xs text-slate space-y-1">
-                <li>• <strong>Diagonal cells</strong>: Always 100% (judge agrees with themselves)</li>
-                <li>• <strong>Green cells</strong>: High agreement between judges</li>
-                <li>• <strong>Red cells</strong>: Judges ranked responses very differently</li>
-                <li>• <strong>Symmetric</strong>: Agreement between A→B equals B→A</li>
+            <div className="p-3 sm:p-4 bg-parchment/30 rounded-lg">
+              <h4 className="text-xs sm:text-sm font-semibold text-ink mb-2">How to Interpret</h4>
+              <ul className="text-[10px] sm:text-xs text-slate space-y-1">
+                <li>• <strong>Diagonal</strong>: Always 100% (self-agreement)</li>
+                <li>• <strong>Green</strong>: High agreement between judges</li>
+                <li>• <strong>Red</strong>: Judges ranked differently</li>
+                <li>• <strong>Symmetric</strong>: A→B equals B→A</li>
               </ul>
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-sepia/10 flex-shrink-0">
-          <button onClick={onClose} className="btn btn-primary w-full">
+        <div className="p-4 sm:p-6 border-t border-sepia/10 flex-shrink-0">
+          <button onClick={onClose} className="btn btn-primary w-full min-h-[44px]">
             Close
           </button>
         </div>
@@ -1735,4 +1744,656 @@ TabbedRoundView.propTypes = {
       responses: PropTypes.arrayOf(responseShape).isRequired
     })
   ).isRequired
+}
+
+// === DeliberationEvolutionView Component ===
+export function DeliberationEvolutionView({ allResponses }) {
+  const [selectedModel, setSelectedModel] = useState(null)
+  const [showConvergenceChart, setShowConvergenceChart] = useState(true)
+
+  const responsesByModel = useMemo(() => {
+    const grouped = {}
+    allResponses.forEach(resp => {
+      if (!grouped[resp.model]) {
+        grouped[resp.model] = []
+      }
+      grouped[resp.model].push(resp)
+    })
+
+    Object.keys(grouped).forEach(model => {
+      grouped[model].sort((a, b) => a.round - b.round)
+    })
+
+    return grouped
+  }, [allResponses])
+
+  const convergenceData = useMemo(() => {
+    return calculateConvergenceMetrics(responsesByModel)
+  }, [responsesByModel])
+
+  const models = Object.keys(responsesByModel)
+
+  useEffect(() => {
+    if (!selectedModel && models.length > 0) {
+      setSelectedModel(models[0])
+    }
+  }, [selectedModel, models])
+
+  if (models.length === 0) {
+    return (
+      <div className="card p-6 rounded-xl text-center">
+        <p className="text-slate text-sm">No multi-round responses available</p>
+      </div>
+    )
+  }
+
+  const selectedResponses = selectedModel ? responsesByModel[selectedModel] : []
+  const maxRound = Math.max(...allResponses.map(r => r.round))
+
+  return (
+    <div className="space-y-4">
+      {/* Convergence Chart */}
+      {showConvergenceChart && convergenceData.rounds.length > 1 && (
+        <ConvergenceChart
+          data={convergenceData}
+          models={models}
+          onClose={() => setShowConvergenceChart(false)}
+        />
+      )}
+
+      {/* Model Selector */}
+      <div className="card p-4 rounded-xl">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-sepia" />
+            <h3 className="font-display text-sm font-semibold text-ink">Response Evolution by Model</h3>
+          </div>
+          {convergenceData.rounds.length > 1 && (
+            <button
+              onClick={() => setShowConvergenceChart(!showConvergenceChart)}
+              className="text-xs text-sepia hover:text-rust transition-colors"
+            >
+              {showConvergenceChart ? 'Hide' : 'Show'} Convergence Chart
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {models.map(model => {
+            const isSelected = model === selectedModel
+            const roundCount = responsesByModel[model].length
+            return (
+              <button
+                key={model}
+                onClick={() => setSelectedModel(model)}
+                className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  isSelected
+                    ? 'bg-sepia text-white shadow-sm'
+                    : 'bg-parchment/50 text-slate hover:bg-sepia/10 hover:text-sepia'
+                }`}
+              >
+                {model}
+                <span className={`ml-1.5 ${isSelected ? 'text-white/70' : 'text-slate/70'}`}>
+                  ({roundCount} round{roundCount === 1 ? '' : 's'})
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Evolution Timeline */}
+      {selectedModel && selectedResponses.length > 0 && (
+        <ModelEvolutionTimeline
+          modelName={selectedModel}
+          responses={selectedResponses}
+          maxRound={maxRound}
+        />
+      )}
+    </div>
+  )
+}
+
+DeliberationEvolutionView.propTypes = {
+  allResponses: PropTypes.arrayOf(responseShape).isRequired
+}
+
+// === ModelEvolutionTimeline Component ===
+function ModelEvolutionTimeline({ modelName, responses, maxRound }) {
+  const [expandedRound, setExpandedRound] = useState(null)
+
+  const roundColors = {
+    1: { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700', dot: 'bg-blue-500' },
+    2: { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-700', dot: 'bg-purple-500' },
+    3: { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-700', dot: 'bg-amber-500' },
+    4: { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+    5: { bg: 'bg-rose-50', border: 'border-rose-400', text: 'text-rose-700', dot: 'bg-rose-500' }
+  }
+
+  const getRoundColor = (roundNum) => {
+    if (roundColors[roundNum]) return roundColors[roundNum]
+    const colorArray = Object.values(roundColors)
+    return colorArray[(roundNum - 1) % colorArray.length]
+  }
+
+  return (
+    <div className="card p-4 rounded-xl">
+      <h3 className="font-display text-sm font-semibold text-ink mb-4">
+        Evolution Path: {modelName}
+      </h3>
+
+      <div className="space-y-0">
+        {responses.map((response, idx) => {
+          const isExpanded = expandedRound === response.round
+          const isLast = idx === responses.length - 1
+          const colors = getRoundColor(response.round)
+          const previousResponse = idx > 0 ? responses[idx - 1] : null
+
+          return (
+            <div key={response.id} className="relative">
+              {/* Timeline Line */}
+              {!isLast && (
+                <div className="absolute left-3 top-8 bottom-0 w-0.5 bg-sepia/20" />
+              )}
+
+              {/* Timeline Node */}
+              <div className="flex gap-3">
+                <div className="relative flex-shrink-0">
+                  <div className={`w-6 h-6 rounded-full ${colors.dot} flex items-center justify-center text-white text-xs font-bold shadow-sm`}>
+                    {response.round}
+                  </div>
+                </div>
+
+                <div className="flex-1 pb-6">
+                  <button
+                    onClick={() => setExpandedRound(isExpanded ? null : response.round)}
+                    className={`w-full text-left border-2 ${colors.border} rounded-lg overflow-hidden transition-all hover:shadow-sm`}
+                  >
+                    <div className={`${colors.bg} p-3`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className={`text-xs font-semibold ${colors.text} mb-1`}>
+                            Round {response.round}
+                            {response.round === maxRound && (
+                              <span className="ml-2 px-2 py-0.5 bg-sage text-white text-xs rounded-full font-medium">
+                                Latest
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate line-clamp-2">
+                            {response.content.substring(0, 150)}...
+                          </p>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-slate flex-shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate flex-shrink-0" />
+                        )}
+                      </div>
+
+                      {/* Metadata */}
+                      <div className="flex gap-3 mt-2 text-xs text-slate">
+                        {response.metadata?.tokens_output && (
+                          <span>{response.metadata.tokens_output} tokens</span>
+                        )}
+                        {response.metadata?.cost_usd !== undefined && (
+                          <span>{USD_COST_FORMATTER.format(response.metadata.cost_usd)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div className="mt-3 animate-fade-in">
+                      {previousResponse && (
+                        <ResponseDiff
+                          previousContent={previousResponse.content}
+                          currentContent={response.content}
+                          previousRound={previousResponse.round}
+                          currentRound={response.round}
+                        />
+                      )}
+
+                      <div className="mt-3 border border-sepia/10 rounded-lg p-3 bg-[var(--bg-card)]">
+                        <div className="text-xs font-semibold text-slate mb-2">Full Response:</div>
+                        <div className="prose prose-sm max-w-none">
+                          <MarkdownRenderer content={response.content} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+ModelEvolutionTimeline.propTypes = {
+  modelName: PropTypes.string.isRequired,
+  responses: PropTypes.arrayOf(responseShape).isRequired,
+  maxRound: PropTypes.number.isRequired
+}
+
+// === ResponseDiff Component ===
+function ResponseDiff({ previousContent, currentContent, previousRound, currentRound }) {
+  const changes = useMemo(() => {
+    return calculateTextChanges(previousContent, currentContent)
+  }, [previousContent, currentContent])
+
+  return (
+    <div className="border border-sepia/20 rounded-lg overflow-hidden bg-[var(--bg-card)]">
+      <div className="bg-parchment/30 px-3 py-2 border-b border-sepia/10">
+        <div className="text-xs font-semibold text-ink">
+          Changes from Round {previousRound} → Round {currentRound}
+        </div>
+      </div>
+
+      <div className="p-3 space-y-2">
+        {changes.unchanged && changes.additions === 0 && changes.deletions === 0 ? (
+          <div className="flex items-center gap-2 text-sage text-xs">
+            <CheckCircle className="w-4 h-4" />
+            <span>No changes (response unchanged)</span>
+          </div>
+        ) : (
+          <>
+            <div className="flex gap-4 text-xs">
+              {changes.additions > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-sm bg-emerald-500/20 border border-emerald-500/40" />
+                  <span className="text-slate">+{changes.additions} added</span>
+                </div>
+              )}
+              {changes.deletions > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-sm bg-rust/20 border border-rust/40" />
+                  <span className="text-slate">-{changes.deletions} removed</span>
+                </div>
+              )}
+              {changes.totalWords > 0 && (
+                <div className="text-slate">
+                  {((changes.additions + changes.deletions) / changes.totalWords * 100).toFixed(1)}% changed
+                </div>
+              )}
+            </div>
+
+            {/* Word-level diff */}
+            <div className="text-xs leading-relaxed font-mono bg-slate/5 p-2 rounded max-h-40 overflow-y-auto">
+              {changes.diff.map((part, idx) => {
+                if (part.type === 'added') {
+                  return (
+                    <span key={idx} className="bg-emerald-500/20 text-emerald-900 dark:text-emerald-100">
+                      {part.value}
+                    </span>
+                  )
+                } else if (part.type === 'removed') {
+                  return (
+                    <span key={idx} className="bg-rust/20 text-rust line-through">
+                      {part.value}
+                    </span>
+                  )
+                } else {
+                  return <span key={idx} className="text-slate/70">{part.value}</span>
+                }
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+ResponseDiff.propTypes = {
+  previousContent: PropTypes.string.isRequired,
+  currentContent: PropTypes.string.isRequired,
+  previousRound: PropTypes.number.isRequired,
+  currentRound: PropTypes.number.isRequired
+}
+
+// Simple word-based diff algorithm
+function calculateTextChanges(oldText, newText) {
+  const oldWords = oldText.split(/(\s+)/)
+  const newWords = newText.split(/(\s+)/)
+
+  // Simple LCS-based diff
+  const diff = []
+  let additions = 0
+  let deletions = 0
+
+  let i = 0, j = 0
+  while (i < oldWords.length || j < newWords.length) {
+    if (i >= oldWords.length) {
+      // Only new words remaining
+      diff.push({ type: 'added', value: newWords[j] })
+      additions++
+      j++
+    } else if (j >= newWords.length) {
+      // Only old words remaining
+      diff.push({ type: 'removed', value: oldWords[i] })
+      deletions++
+      i++
+    } else if (oldWords[i] === newWords[j]) {
+      // Words match
+      diff.push({ type: 'unchanged', value: oldWords[i] })
+      i++
+      j++
+    } else {
+      // Words differ - simple heuristic: look ahead a few words
+      const lookAhead = 5
+      let foundInNew = -1
+      let foundInOld = -1
+
+      for (let k = 1; k <= lookAhead && j + k < newWords.length; k++) {
+        if (oldWords[i] === newWords[j + k]) {
+          foundInNew = k
+          break
+        }
+      }
+
+      for (let k = 1; k <= lookAhead && i + k < oldWords.length; k++) {
+        if (oldWords[i + k] === newWords[j]) {
+          foundInOld = k
+          break
+        }
+      }
+
+      if (foundInNew !== -1 && (foundInOld === -1 || foundInNew <= foundInOld)) {
+        // Add new words
+        for (let k = 0; k < foundInNew; k++) {
+          diff.push({ type: 'added', value: newWords[j] })
+          additions++
+          j++
+        }
+      } else if (foundInOld !== -1) {
+        // Remove old words
+        for (let k = 0; k < foundInOld; k++) {
+          diff.push({ type: 'removed', value: oldWords[i] })
+          deletions++
+          i++
+        }
+      } else {
+        // No match found, treat as replacement
+        diff.push({ type: 'removed', value: oldWords[i] })
+        diff.push({ type: 'added', value: newWords[j] })
+        additions++
+        deletions++
+        i++
+        j++
+      }
+    }
+  }
+
+  const unchanged = oldText === newText
+  const totalWords = Math.max(oldWords.filter(w => w.trim()).length, newWords.filter(w => w.trim()).length)
+
+  return { diff, additions, deletions, unchanged, totalWords }
+}
+
+function calculateConvergenceMetrics(responsesByModel) {
+  const models = Object.keys(responsesByModel)
+  if (models.length === 0) return { rounds: [], averages: [], modelMetrics: {} }
+
+  const maxRounds = Math.max(...models.map(m => responsesByModel[m].length))
+  const rounds = []
+  const modelMetrics = {}
+
+  for (let roundIdx = 0; roundIdx < maxRounds; roundIdx++) {
+    const roundNum = roundIdx + 1
+    const similarities = []
+
+    models.forEach(model => {
+      const responses = responsesByModel[model]
+      if (roundIdx < responses.length && roundIdx > 0) {
+        const prevContent = responses[roundIdx - 1].content
+        const currContent = responses[roundIdx].content
+        const similarity = calculateTextSimilarity(prevContent, currContent)
+        similarities.push(similarity)
+
+        if (!modelMetrics[model]) {
+          modelMetrics[model] = []
+        }
+        modelMetrics[model].push({ round: roundNum, similarity })
+      }
+    })
+
+    if (similarities.length > 0) {
+      const avgSimilarity = similarities.reduce((sum, s) => sum + s, 0) / similarities.length
+      rounds.push({ round: roundNum, avgSimilarity, count: similarities.length })
+    }
+  }
+
+  return { rounds, modelMetrics }
+}
+
+function calculateTextSimilarity(text1, text2) {
+  if (text1 === text2) return 1.0
+
+  const words1 = new Set(text1.toLowerCase().split(/\s+/).filter(w => w.length > 2))
+  const words2 = new Set(text2.toLowerCase().split(/\s+/).filter(w => w.length > 2))
+
+  if (words1.size === 0 && words2.size === 0) return 1.0
+  if (words1.size === 0 || words2.size === 0) return 0.0
+
+  const intersection = new Set([...words1].filter(w => words2.has(w)))
+  const union = new Set([...words1, ...words2])
+
+  return intersection.size / union.size
+}
+
+function ConvergenceChart({ data, models, onClose }) {
+  if (!data.rounds || data.rounds.length === 0) return null
+
+  const maxSimilarity = 1.0
+  const chartHeight = 120
+  const chartWidth = 400
+  const padding = { top: 20, right: 20, bottom: 30, left: 40 }
+
+  const dataWidth = chartWidth - padding.left - padding.right
+  const dataHeight = chartHeight - padding.top - padding.bottom
+
+  const rounds = data.rounds.filter(r => r.round > 1)
+  if (rounds.length === 0) return null
+
+  const xScale = (round) => {
+    const minRound = Math.min(...rounds.map(r => r.round))
+    const maxRound = Math.max(...rounds.map(r => r.round))
+    const range = maxRound - minRound || 1
+    return padding.left + ((round - minRound) / range) * dataWidth
+  }
+
+  const yScale = (similarity) => {
+    return padding.top + dataHeight - (similarity * dataHeight)
+  }
+
+  const pathData = rounds.map((r, i) => {
+    const x = xScale(r.round)
+    const y = yScale(r.avgSimilarity)
+    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+  }).join(' ')
+
+  const convergenceThreshold = 0.95
+  const isConverging = rounds.length > 0 && rounds[rounds.length - 1].avgSimilarity >= convergenceThreshold
+
+  return (
+    <div className="card p-4 rounded-xl border-2 border-sepia/10">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sepia to-rust flex items-center justify-center">
+            <Zap className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h3 className="font-display text-sm font-semibold text-ink">Convergence Analysis</h3>
+            <p className="text-xs text-slate">Response stability across rounds</p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-slate hover:text-rust transition-colors"
+        >
+          <ChevronUp className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            className="w-full h-auto"
+            style={{ maxHeight: '150px' }}
+          >
+            <defs>
+              <linearGradient id="convergenceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="rgb(132, 94, 73)" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="rgb(132, 94, 73)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+
+            <line
+              x1={padding.left}
+              y1={yScale(convergenceThreshold)}
+              x2={chartWidth - padding.right}
+              y2={yScale(convergenceThreshold)}
+              stroke="rgb(101, 116, 82)"
+              strokeWidth="1"
+              strokeDasharray="4 2"
+              opacity="0.5"
+            />
+
+            <path
+              d={pathData}
+              fill="none"
+              stroke="rgb(132, 94, 73)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+
+            <path
+              d={`${pathData} L ${xScale(rounds[rounds.length - 1].round)} ${yScale(0)} L ${xScale(rounds[0].round)} ${yScale(0)} Z`}
+              fill="url(#convergenceGradient)"
+            />
+
+            {rounds.map((r, i) => (
+              <g key={i}>
+                <circle
+                  cx={xScale(r.round)}
+                  cy={yScale(r.avgSimilarity)}
+                  r="4"
+                  fill="rgb(132, 94, 73)"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+              </g>
+            ))}
+
+            <text
+              x={chartWidth - padding.right}
+              y={yScale(convergenceThreshold) - 5}
+              textAnchor="end"
+              fontSize="10"
+              fill="rgb(101, 116, 82)"
+            >
+              Convergence ({(convergenceThreshold * 100).toFixed(0)}%)
+            </text>
+
+            {rounds.map((r, i) => (
+              <text
+                key={i}
+                x={xScale(r.round)}
+                y={chartHeight - padding.bottom + 15}
+                textAnchor="middle"
+                fontSize="10"
+                fill="rgb(100, 116, 139)"
+              >
+                R{r.round}
+              </text>
+            ))}
+
+            <text
+              x={padding.left - 5}
+              y={yScale(1.0)}
+              textAnchor="end"
+              fontSize="10"
+              fill="rgb(100, 116, 139)"
+            >
+              100%
+            </text>
+            <text
+              x={padding.left - 5}
+              y={yScale(0.5)}
+              textAnchor="end"
+              fontSize="10"
+              fill="rgb(100, 116, 139)"
+            >
+              50%
+            </text>
+            <text
+              x={padding.left - 5}
+              y={yScale(0)}
+              textAnchor="end"
+              fontSize="10"
+              fill="rgb(100, 116, 139)"
+            >
+              0%
+            </text>
+          </svg>
+        </div>
+
+        <div className="w-48 space-y-3">
+          <div>
+            <div className="text-xs font-semibold text-slate mb-1">Status</div>
+            <div className={`flex items-center gap-1.5 text-xs font-medium ${isConverging ? 'text-sage' : 'text-amber-600'}`}>
+              {isConverging ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Converged</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Still Evolving</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate mb-1">Latest Similarity</div>
+            <div className="text-lg font-bold text-ink">
+              {(rounds[rounds.length - 1].avgSimilarity * 100).toFixed(1)}%
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate mb-1">Models Tracked</div>
+            <div className="text-sm text-ink">{models.length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-sepia/10">
+        <p className="text-xs text-slate">
+          Similarity measures how much responses changed between consecutive rounds.
+          High similarity (≥95%) indicates models have converged on stable answers.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+ConvergenceChart.propTypes = {
+  data: PropTypes.shape({
+    rounds: PropTypes.arrayOf(PropTypes.shape({
+      round: PropTypes.number.isRequired,
+      avgSimilarity: PropTypes.number.isRequired,
+      count: PropTypes.number.isRequired
+    })).isRequired,
+    modelMetrics: PropTypes.object.isRequired
+  }).isRequired,
+  models: PropTypes.arrayOf(PropTypes.string).isRequired,
+  onClose: PropTypes.func.isRequired
 }

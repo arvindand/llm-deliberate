@@ -8,7 +8,7 @@
 
 ## ⚠️ Maintenance Disclaimer
 
-**This is an experimentation tool and experimental project.** Like Karpathy's original llm-council, this is primarily a exploration of LLM deliberation methods. While functional and documented, **this project will not be actively maintained**. The code is provided as-is for inspiration, learning, and further experimentation.
+**This is an experimental personal research project.** Like Karpathy's original llm-council, it is primarily an exploration of LLM deliberation methods. It is maintained on a best-effort basis and the APIs and data format may evolve between versions.
 
 Feel free to fork and modify it for your own research needs!
 
@@ -19,11 +19,14 @@ While inspired by Karpathy's llm-council, Deliberate takes a different approach:
 | Feature | llm-council | Deliberate |
 | ------- | ----------- | ---------- |
 | **Purpose** | Chat interface with synthesized final answer | Experimentation tool for studying aggregation methods |
-| **Output** | Single "Chairman" synthesized response | Side-by-side comparison of 5 voting algorithms |
+| **Output** | Single "Chairman" synthesized response | Side-by-side comparison of **8** voting algorithms |
 | **Deliberation** | Single round + review | Multi-round iterative refinement |
 | **Analysis** | Rankings displayed | Agreement matrices, cost dashboards, export to CSV/JSON |
 | **Data Model** | Conversation threads | Structured experiments with questions |
 | **Manual Entry** | Not supported | Full support for manual data collection |
+| **Self-Consistency** | Not supported | Query same model N times (Wang et al. 2022) |
+| **Debate Format** | Not supported | Adversarial deliberation API with judge (Irving et al. 2018) |
+| **Dark Mode** | Not supported | Warm brown theme with toggle |
 
 Deliberate focuses on **researching the deliberation process itself** rather than producing final answers. It's designed to help answer questions like:
 
@@ -41,13 +44,16 @@ You can use it in a few common modes:
 - **Rankings + aggregation:** have models rank each other, then compare formal voting methods on the same set of judgments
 - **Multi-round deliberation:** run iterative rounds where models see peer responses and revise their own; the job can stop early if responses converge
 
-For the aggregation layer, Deliberate implements several algorithms from social choice theory:
+For the aggregation layer, Deliberate implements eight algorithms from social choice theory:
 
 - **Plurality** — Simple first-place vote counting
 - **Borda Count** — Positional voting with points for each rank
 - **Weighted Borda** — Borda weighted by judge confidence scores
 - **Copeland (Condorcet)** — Pairwise comparison winner
 - **Ranked Pairs (Tideman)** — Handles voting cycles gracefully
+- **Schulze Method** — Strongest path Condorcet completion
+- **STV/Instant Runoff** — Iterative elimination voting
+- **Approval Voting** — Top-N approval threshold counting
 
 ## Research Questions
 
@@ -69,10 +75,12 @@ In our experiments, a few patterns emerged:
 
 ## Quick Start
 
+> **New here?** See [QUICKSTART.md](QUICKSTART.md) for a hands-on walkthrough of all features.
+
 ### Prerequisites
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 20.19+ (or 22.12+)
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - OpenRouter API key (recommended, for automated collection)
 
@@ -141,6 +149,31 @@ npm run dev
 
 Then open <http://localhost:5173>
 
+## Quick Feature Test
+
+After starting the app, test these features:
+
+| Feature | How to Test |
+|---------|-------------|
+| Dark Mode | Click moon icon in header |
+| 8 Aggregation Methods | Rankings → Compare → All 8 appear |
+| Evolution View | Multi-round question → Toggle "Evolution" |
+| Agreement Heatmap | Rankings → "View Agreement" button |
+| Chairman Synthesis | Rankings → "Synthesize Final Answer" button |
+| Debate API | Open `/docs` → `POST /experiments/{id}/automate/debate` |
+
+## Testing
+
+```bash
+# Backend
+pytest
+
+# Frontend
+cd frontend
+npm test
+npm run build
+```
+
 ## Demo (Multi‑Round Deliberation)
 
 A multi-round deliberation demo is available at
@@ -172,25 +205,24 @@ Each question has:
 - **Type**: Factual, Reasoning, Subjective, or Creative
 - **Ground Truth** (optional): for factual/reasoning evaluation
 
-### 2. Collect Round 1 Responses (the starting council opinions)
+### 2. Choose Your Response Collection Mode
 
-You can gather initial responses in two ways:
+> **Important:** Auto collection and Deliberation are **mutually exclusive** per question. Choose one approach:
 
-#### Manual collection
+#### Option A: One-Shot Collection (Auto)
 
-- Copy/paste responses from model UIs
-- Click **Add** in the Responses section
-
-#### Automated collection (requires OpenRouter API key)
+Collect a single response from each model with no iteration:
 
 - Click **Auto** in the Responses section
 - Filter models by provider using the provider pills (OpenAI, Anthropic, Google, etc.)
 - Select which models to query—each shows per-token pricing
 - Review the estimated cost before starting (warnings appear for high-cost selections >$0.50)
 
-### 3. Run Multi‑Round Deliberation (core feature)
+Best for: Comparing initial model outputs, collecting responses for ranking/aggregation
 
-Multi-round deliberation creates new "rounds" where models see the other responses and refine their answer.
+#### Option B: Multi-Round Deliberation (core feature)
+
+Models see each other's responses and refine their answers over multiple rounds:
 
 - Click **Deliberate**
 - Select the council models (the UI shows the total API calls: e.g., "3 models × 3 rounds = 9 API calls")
@@ -198,26 +230,96 @@ Multi-round deliberation creates new "rounds" where models see the other respons
 - Start the job and monitor progress (the UI streams status updates in real time)
 - Deliberation may stop early if models converge on similar answers
 
-After completion:
+Best for: Studying consensus formation, comparing how models update their reasoning
+
+After deliberation completes:
 
 - Responses are organized into horizontal tabs by round, color-coded: Round 1 (blue), Round 2 (purple), Round 3 (amber), Round 4 (emerald), Round 5+ (rose)
 - The header shows a **Convergent Answer**—a representative response from the final round (scroll down to see full deliberation history)
 - Click **View Costs** in the experiment header to see cost breakdowns by question, model, round, and provider
-- Responses render with GitHub-flavored markdown (code blocks, tables, lists, etc.)
 
-### 4. (Optional) Rank + Aggregate to Compare Voting Methods
+#### Option C: Manual Collection
+
+- Copy/paste responses from model UIs
+- Click **Add** in the Responses section
+
+All response modes render with GitHub-flavored markdown (code blocks, tables, lists, etc.)
+
+### 3. (Optional) Rank + Aggregate to Compare Voting Methods
 
 If you want to compare the social-choice aggregators:
 
 - Collect rankings (manual **Add** or automated **Auto**)
 - For automated ranking, use the **Use Response Models as Judges** button to quickly select the same models that provided responses
 - Each ranking includes a confidence score (0-100%) and optional reasoning from the judge
-- Click **Compare Aggregation Methods** to see all five methods side-by-side (Plurality, Borda, Weighted Borda, Copeland, Ranked Pairs)
+- Click **Compare Aggregation Methods** to see all eight methods side-by-side
 - When all methods agree, the UI shows **Unanimous**
 
 With multiple rankings, you can also analyze judge agreement patterns. Click **View Agreement Matrix** in the question card to see a heatmap of how closely judges' rankings align with each other. The matrix uses a red-yellow-green gradient (0% to 100% agreement) and computes a **diversity score** (0-1 scale, where higher values indicate more disagreement among judges—useful for detecting herding).
 
-### 5. Exporting Results
+## Advanced Features
+
+### Self-Consistency Mode (API Only)
+
+Query the same model N times with temperature=0.8 to sample diverse reasoning paths. This feature is available via the REST API but not exposed in the UI.
+
+```bash
+POST /experiments/{id}/automate/self-consistency
+{
+  "question_id": "...",
+  "model": "anthropic/claude-sonnet-4",
+  "num_samples": 5
+}
+```
+
+Based on: Wang et al., 2022 - "Self-Consistency Improves Chain of Thought Reasoning"
+
+### Debate Format (API Only)
+
+Run adversarial deliberation where two models argue and a judge picks the winner. This
+workflow is currently available through the REST API rather than the UI.
+
+Use the interactive API documentation at <http://localhost:8000/docs>, or call:
+
+```text
+POST /experiments/{id}/automate/debate
+{
+  "question_id": "...",
+  "debaters": ["model-a", "model-b"],
+  "judge_model": "model-c",
+  "num_rounds": 3
+}
+```
+
+Poll the returned job ID through the automation status endpoint to retrieve the
+arguments and judge verdict.
+
+Based on: Irving et al., 2018 - "AI safety via debate"
+
+### Evolution Visualization
+
+Track how responses change across deliberation rounds:
+
+- Run multi-round deliberation (2+ rounds)
+- Toggle **"Evolution"** view in the Responses section
+- See convergence chart and per-model timeline
+- Expand rounds to see word-level diffs
+
+### Chairman Synthesis
+
+Generate a final synthesized answer from top-ranked responses:
+
+- Collect rankings for a question
+- Click **"Synthesize Final Answer"** button
+- Select a chairman model
+- View the markdown-rendered synthesis; it is saved with the experiment and remains
+  available after reloading the page
+
+### Dark Mode
+
+Toggle dark mode via the moon/sun icon in the header. Uses warm brown tones (#2a2318) instead of pure black. Preference saved to localStorage.
+
+## Exporting Results
 
 You can export experiment data for further analysis:
 
@@ -260,6 +362,8 @@ If you prefer scripting (or want reproducible experiment setup in CI), you can c
 
 ```bash
 uv run python -m backend.cli new "Showcase" -d "LLM council demo"
+# Or, after installation:
+uv run deliberate new "Showcase" -d "LLM council demo"
 
 # Replace EXP_ID below with the printed ID
 EXP_ID=<id>
@@ -366,12 +470,30 @@ For each pair of candidates, count who is preferred by more judges. A Condorcet 
 
 Locks in pairwise preferences from strongest to weakest, skipping any that would create a cycle. Handles Condorcet paradoxes gracefully.
 
+### Schulze Method
+
+Computes the strongest path between all candidate pairs using the Floyd-Warshall algorithm. Handles Condorcet cycles elegantly by finding the candidate with the strongest indirect comparisons.
+
+**Research note**: "A New Monotonic, Clone-Independent, Reversal Symmetric, and Condorcet-Consistent Single-Winner Election Method" (Markus Schulze, 2011)
+
+### STV / Instant Runoff
+
+Eliminates the lowest-ranked candidate each round, transferring votes to voters' next choices. Used in Australian federal elections and many other jurisdictions worldwide.
+
+### Approval Voting
+
+Candidates in the top N positions (default: 2) are "approved" by that judge. Counts total approvals across all judges.
+
+**Research note**: "Approval Voting" - Brams & Fishburn (1983)
+
 ## References
 
 - Surowiecki, J. (2004). *The Wisdom of Crowds*
 - Van Newenhizen, J. (1992). "The Borda method is most likely to respect the Condorcet principle"
 - Irving, G. et al. (2018). "AI safety via debate"
 - Wang, X. et al. (2022). "Self-Consistency Improves Chain of Thought Reasoning"
+- Schulze, M. (2011). "A New Monotonic, Clone-Independent, Reversal Symmetric, and Condorcet-Consistent Single-Winner Election Method"
+- Brams, S. J. & Fishburn, P. C. (1983). "Approval Voting"
 
 ## License
 

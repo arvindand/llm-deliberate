@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types'
 import {
   Scale,
@@ -14,8 +14,14 @@ import {
   Sparkles,
   BookOpen,
   Zap,
+  Moon,
+  Sun,
+  Crown,
+  Loader,
+  AlertCircle,
 } from 'lucide-react'
-import { AutomatedResponseForm, AutomatedRankingForm, ResponseCard, AutomatedDeliberationForm, MarkdownRenderer, TabbedRoundView, AgreementMatrixHeatmap } from './components'
+import { AutomatedResponseForm, AutomatedRankingForm, ResponseCard, AutomatedDeliberationForm, MarkdownRenderer, TabbedRoundView, AgreementMatrixHeatmap, DeliberationEvolutionView } from './components'
+import { estimateTokenCost } from './costs'
 
 const API_BASE = '/api'
 
@@ -123,8 +129,19 @@ function formatCost(usd) {
 // === Components ===
 
 function Header({ onHome }) {
+  const [theme, setTheme] = useState(() => localStorage.getItem('llm-deliberate-theme') || 'light')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('llm-deliberate-theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light')
+  }
+
   return (
-    <header className="border-b border-sepia/10 bg-white/50 backdrop-blur-sm sticky top-0 z-50">
+    <header className="border-b border-sepia/10 header-bg sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <button
           type="button"
@@ -143,6 +160,15 @@ function Header({ onHome }) {
           </div>
         </button>
         <nav className="flex items-center gap-6 text-sm">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2 text-slate hover:text-sepia transition-colors bg-transparent border-none cursor-pointer flex items-center justify-center"
+            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          >
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </button>
           <button
             type="button"
             onClick={onHome}
@@ -254,8 +280,8 @@ function CreateExperimentModal({ onClose, onCreate }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="card rounded-2xl p-8 w-full max-w-md animate-slide-up">
+    <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
+      <div className="card rounded-2xl p-6 sm:p-8 w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto animate-slide-up">
         <h2 className="font-display text-2xl font-semibold text-ink mb-6">New Experiment</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -310,7 +336,7 @@ function groupResponsesByRound(responses) {
     .sort((a, b) => a.round - b.round)
 }
 
-function renderResponsesContent(roundGroups, hasMultipleRounds, responses) {
+function renderResponsesContent(roundGroups, hasMultipleRounds, responses, viewMode) {
   if (!roundGroups || roundGroups.length === 0) {
     return (
       <p className="text-sm text-slate text-center py-8">
@@ -319,7 +345,12 @@ function renderResponsesContent(roundGroups, hasMultipleRounds, responses) {
     )
   }
 
-  if (hasMultipleRounds) return <TabbedRoundView roundGroups={roundGroups} />
+  if (hasMultipleRounds) {
+    if (viewMode === 'evolution') {
+      return <DeliberationEvolutionView allResponses={responses} />
+    }
+    return <TabbedRoundView roundGroups={roundGroups} />
+  }
 
   return (
     <div className="space-y-3">
@@ -337,8 +368,30 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
   const [showAutomatedRanking, setShowAutomatedRanking] = useState(false)
   const [showDeliberation, setShowDeliberation] = useState(false)
   const [showAgreementMatrix, setShowAgreementMatrix] = useState(false)
+  const [showChairmanSynthesis, setShowChairmanSynthesis] = useState(false)
+  const [responseViewMode, setResponseViewMode] = useState('rounds')
   const [newResponse, setNewResponse] = useState({ model: '', content: '' })
   const [newRanking, setNewRanking] = useState({ judge: '', rankings: [], confidence: 1 })
+  const [chairmanSynthesis, setChairmanSynthesis] = useState(() => (
+    question.chairman_synthesis
+      ? {
+          content: question.chairman_synthesis.content,
+          chairmanModel: question.chairman_synthesis.chairman_model,
+          jobId: question.chairman_synthesis.job_id,
+          timestamp: question.chairman_synthesis.created_at
+        }
+      : null
+  ))
+
+  useEffect(() => {
+    if (!question.chairman_synthesis) return
+    setChairmanSynthesis({
+      content: question.chairman_synthesis.content,
+      chairmanModel: question.chairman_synthesis.chairman_model,
+      jobId: question.chairman_synthesis.job_id,
+      timestamp: question.chairman_synthesis.created_at
+    })
+  }, [question.chairman_synthesis])
 
   const models = ['gpt-4o', 'claude-sonnet', 'gemini-pro', 'llama-3', 'mistral', 'deepseek']
   const typeColors = {
@@ -369,7 +422,7 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
     deliberationTitle = 'Disabled after rankings exist'
   }
 
-  const responsesContent = renderResponsesContent(roundGroups, hasMultipleRounds, question.responses)
+  const responsesContent = renderResponsesContent(roundGroups, hasMultipleRounds, question.responses, responseViewMode)
 
   return (
     <div className="card rounded-xl overflow-hidden">
@@ -436,7 +489,7 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
               Convergent Answer (Round {roundGroups.at(-1).round})
             </h4>
           </div>
-          <div className="bg-white/50 rounded-lg border border-sage/10 p-4">
+          <div className="bg-[var(--bg-card)]/50 rounded-lg border border-sage/10 p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-medium text-slate">Representative Model:</span>
               <span className={`model-badge ${roundGroups.at(-1).responses[0].model.split('/')[0]}`}>
@@ -456,9 +509,35 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
       {/* Responses */}
       <div className="p-5 bg-parchment/30">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-semibold text-slate uppercase tracking-wide">
-            Responses ({question.responses?.length || 0})
-          </h4>
+          <div className="flex items-center gap-3">
+            <h4 className="text-sm font-semibold text-slate uppercase tracking-wide">
+              Responses ({question.responses?.length || 0})
+            </h4>
+            {hasMultipleRounds && (
+              <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5 border border-sepia/10">
+                <button
+                  onClick={() => setResponseViewMode('rounds')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded transition-all ${
+                    responseViewMode === 'rounds'
+                      ? 'bg-sepia text-white'
+                      : 'text-slate hover:text-sepia'
+                  }`}
+                >
+                  By Round
+                </button>
+                <button
+                  onClick={() => setResponseViewMode('evolution')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded transition-all ${
+                    responseViewMode === 'evolution'
+                      ? 'bg-sepia text-white'
+                      : 'text-slate hover:text-sepia'
+                  }`}
+                >
+                  Evolution
+                </button>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
@@ -532,7 +611,7 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
         )}
 
         {showAddResponse && (
-          <div className="mb-4 p-4 bg-white rounded-lg border border-sepia/10 animate-slide-up">
+          <div className="mb-4 p-4 bg-[var(--bg-card)] rounded-lg border border-sepia/10 animate-slide-up">
             <div className="grid grid-cols-2 gap-3 mb-3">
               <select
                 value={newResponse.model}
@@ -688,7 +767,7 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
               })
 
               return (
-                <div key={rank.id} className="bg-white rounded-lg border border-sepia/20 shadow-sm p-4">
+                <div key={rank.id} className="bg-[var(--bg-card)] rounded-lg border border-sepia/20 shadow-sm p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-slate">Judge:</span>
@@ -764,6 +843,14 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
               <Users className="w-4 h-4" />
               View Ranking Agreement (Judges)
             </button>
+            <button
+              type="button"
+              onClick={() => setShowChairmanSynthesis(true)}
+              className="btn btn-secondary w-full flex items-center justify-center gap-2 bg-gradient-to-r from-sepia/10 to-sage/10 hover:from-sepia/20 hover:to-sage/20"
+            >
+              <Crown className="w-4 h-4 text-sepia" />
+              Synthesize Final Answer
+            </button>
           </div>
         )}
 
@@ -773,6 +860,67 @@ function QuestionCard({ experimentId, question, onAddResponse, onAddRanking, onC
             questionId={question.id}
             onClose={() => setShowAgreementMatrix(false)}
           />
+        )}
+
+        {showChairmanSynthesis && (
+          <ChairmanSynthesisModal
+            experimentId={experimentId}
+            questionId={question.id}
+            question={question}
+            onClose={() => setShowChairmanSynthesis(false)}
+            onSynthesisComplete={async (jobId) => {
+              const res = await fetch(`${API_BASE}/experiments/${experimentId}/automation/status/${jobId}`)
+              if (!res.ok) {
+                const error = await res.json().catch(() => ({}))
+                console.error('Failed to fetch synthesis result:', error.detail || 'API error')
+                return
+              }
+              const result = await res.json()
+              if (result.results && result.results[0]) {
+                setChairmanSynthesis({
+                  content: result.results[0].content,
+                  chairmanModel: result.results[0].chairman_model,
+                  jobId: jobId,
+                  timestamp: result.completed_at || new Date().toISOString()
+                })
+              }
+              setShowChairmanSynthesis(false)
+              onRefresh()
+            }}
+          />
+        )}
+
+        {chairmanSynthesis && (
+          <div className="mt-4 p-5 bg-gradient-to-br from-sepia/5 to-sage/5 rounded-xl border border-sepia/20 animate-slide-up">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sepia to-sage flex items-center justify-center">
+                <Crown className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-sage uppercase tracking-wide">
+                  Chairman Synthesis
+                </h4>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate">Chairman:</span>
+                  <span className={`model-badge ${chairmanSynthesis.chairmanModel?.split('/')[0]}`}>
+                    {chairmanSynthesis.chairmanModel}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[var(--bg-card)]/50 rounded-lg border border-sepia/10 p-4">
+              <div className="prose prose-sm max-w-none">
+                <MarkdownRenderer content={chairmanSynthesis.content} />
+              </div>
+            </div>
+
+            {chairmanSynthesis.timestamp && (
+              <div className="mt-3 text-xs text-slate">
+                Synthesized {new Date(chairmanSynthesis.timestamp).toLocaleString()}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -787,7 +935,10 @@ function ComparisonResults({ results, onClose }) {
     borda: 'Borda Count',
     weighted_borda: 'Weighted Borda',
     copeland: 'Copeland',
-    ranked_pairs: 'Ranked Pairs'
+    ranked_pairs: 'Ranked Pairs',
+    schulze: 'Schulze Method',
+    stv: 'STV / Instant Runoff',
+    approval: 'Approval Voting'
   }
 
   const maxScore = Math.max(
@@ -796,8 +947,8 @@ function ComparisonResults({ results, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
-      <div className="card rounded-2xl w-full max-w-3xl animate-slide-up max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-sepia/10 flex-shrink-0">
+      <div className="card rounded-2xl w-full max-w-3xl animate-slide-up max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-sepia/10 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-display text-2xl font-semibold text-ink">Method Comparison</h2>
@@ -811,7 +962,7 @@ function ComparisonResults({ results, onClose }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="space-y-6">
             {Object.entries(results.methods).map(([method, data]) => (
               <div key={method} className="p-4 bg-parchment/30 rounded-xl">
@@ -861,7 +1012,7 @@ function ComparisonResults({ results, onClose }) {
           </div>
         </div>
 
-        <div className="p-6 border-t border-sepia/10 flex-shrink-0">
+        <div className="p-4 sm:p-6 border-t border-sepia/10 flex-shrink-0">
           <button onClick={onClose} className="btn btn-primary w-full">
             Close
           </button>
@@ -882,17 +1033,17 @@ function CostDashboard({ experiment, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
-      <div className="card rounded-2xl w-full max-w-5xl animate-slide-up max-h-[90vh] flex flex-col">
+      <div className="card rounded-2xl w-full max-w-5xl animate-slide-up max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-sepia/10 flex-shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="p-4 sm:p-6 border-b border-sepia/10 flex-shrink-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-display text-2xl font-semibold text-ink">Cost Analysis</h2>
               <p className="text-sm text-slate mt-1">{experiment.name}</p>
             </div>
-            <div className="text-right">
+            <div className="sm:text-right">
               <div className="text-xs text-slate mb-1">Total Experiment Cost</div>
-              <div className="text-4xl font-display font-bold text-sepia">
+              <div className="text-3xl sm:text-4xl font-display font-bold text-sepia">
                 {formatCost(costs.total)}
               </div>
             </div>
@@ -924,28 +1075,28 @@ function CostDashboard({ experiment, onClose }) {
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === 'overview' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="card p-5 bg-gradient-to-br from-white to-parchment/30">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="card p-5 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-secondary)]/30">
                 <div className="text-xs text-slate mb-2 uppercase tracking-wide">Total Questions</div>
                 <div className="text-3xl font-display font-semibold text-ink">
                   {experiment.questions?.length || 0}
                 </div>
               </div>
-              <div className="card p-5 bg-gradient-to-br from-white to-parchment/30">
+              <div className="card p-5 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-secondary)]/30">
                 <div className="text-xs text-slate mb-2 uppercase tracking-wide">Total Responses</div>
                 <div className="text-3xl font-display font-semibold text-ink">
                   {costs.totalResponses}
                 </div>
               </div>
-              <div className="card p-5 bg-gradient-to-br from-white to-sepia/5">
+              <div className="card p-5 bg-gradient-to-br from-[var(--bg-card)] to-sepia/5">
                 <div className="text-xs text-slate mb-2 uppercase tracking-wide">Avg Cost per Response</div>
                 <div className="text-3xl font-display font-semibold text-sepia">
                   {formatCost(costs.total / Math.max(1, costs.totalResponses))}
                 </div>
               </div>
-              <div className="card p-5 bg-gradient-to-br from-white to-parchment/30">
+              <div className="card p-5 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-secondary)]/30">
                 <div className="text-xs text-slate mb-2 uppercase tracking-wide">Total Models Used</div>
                 <div className="text-3xl font-display font-semibold text-ink">
                   {Object.keys(costs.byModel).length}
@@ -1059,7 +1210,7 @@ function CostDashboard({ experiment, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-sepia/10 flex-shrink-0">
+        <div className="p-4 sm:p-6 border-t border-sepia/10 flex-shrink-0">
           <button onClick={onClose} className="btn btn-primary w-full">
             Close
           </button>
@@ -1072,6 +1223,374 @@ function CostDashboard({ experiment, onClose }) {
 CostDashboard.propTypes = {
   experiment: PropTypes.object.isRequired,
   onClose: PropTypes.func.isRequired
+}
+
+function ChairmanSynthesisModal({ experimentId, questionId, question, onClose, onSynthesisComplete }) {
+  const [selectedChairman, setSelectedChairman] = useState('')
+  const [availableModels, setAvailableModels] = useState([])
+  const [selectedProvider, setSelectedProvider] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [jobInProgress, setJobInProgress] = useState(false)
+  const [jobStatus, setJobStatus] = useState(null)
+  const [error, setError] = useState(null)
+  const closeStreamRef = useRef(null)
+  const startedJobIdRef = useRef(null)
+  const pollRetryCount = useRef(0)
+
+  useEffect(() => {
+    async function loadModels() {
+      try {
+        const response = await fetchAPI('/config/models')
+        if (!response.available) {
+          throw new Error(response.message || 'Model automation is unavailable')
+        }
+        setAvailableModels(response.models || [])
+      } catch (err) {
+        setError(`Failed to load models: ${err.message}`)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadModels()
+  }, [])
+
+  useEffect(() => () => {
+    if (closeStreamRef.current) closeStreamRef.current()
+  }, [])
+
+  function formatSynthesisErrors(errors) {
+    if (!errors?.length) return 'Synthesis failed. Please try again.'
+    return errors
+      .map((item) => {
+        if (typeof item === 'string') return item
+        const message = item.message || 'Unknown synthesis error'
+        return item.model ? `${item.model}: ${message}` : message
+      })
+      .join(' ')
+  }
+
+  const handleStreamStatus = (status) => {
+    setJobStatus(status)
+
+    if (status.status === 'completed') {
+      stopJobStream(closeStreamRef)
+      setJobInProgress(false)
+      const jobId = startedJobIdRef.current
+      if (jobId) {
+        setTimeout(() => {
+          onSynthesisComplete(jobId)
+        }, 2000)
+      }
+      return
+    }
+
+    if (status.status === 'failed') {
+      stopJobStream(closeStreamRef)
+      setJobInProgress(false)
+      pollRetryCount.current = 0
+      setError(formatSynthesisErrors(status.errors))
+    }
+  }
+
+  function subscribeToJobStatus({ experimentId: expId, jobId, onStatus, onError }) {
+    const url = `${API_BASE}/experiments/${expId}/automation/stream/${jobId}`
+    const es = new EventSource(url)
+
+    const handler = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        onStatus(data)
+      } catch (err) {
+        onError(err)
+      }
+    }
+
+    es.addEventListener('status', handler)
+    es.onerror = (e) => {
+      es.close()
+      onError(e)
+    }
+
+    return () => es.close()
+  }
+
+  function startJobStream({ experimentId: expId, jobId, closeStreamRef: ref, onStatus, onError }) {
+    stopJobStream(ref)
+    ref.current = subscribeToJobStatus({
+      experimentId: expId,
+      jobId,
+      onStatus,
+      onError,
+    })
+  }
+
+  function stopJobStream(ref) {
+    if (ref?.current) ref.current()
+    if (ref) ref.current = null
+  }
+
+  async function pollJobStatus(jobId) {
+    try {
+      const status = await fetch(`${API_BASE}/experiments/${experimentId}/automation/status/${jobId}`)
+        .then(res => res.json())
+      setJobStatus(status)
+
+      if (status.status === 'completed') {
+        setJobInProgress(false)
+        pollRetryCount.current = 0
+        setTimeout(() => {
+          onSynthesisComplete(jobId)
+        }, 2000)
+      } else if (status.status === 'failed') {
+        pollRetryCount.current = 0
+        stopJobStream(closeStreamRef)
+        setJobInProgress(false)
+        setError(formatSynthesisErrors(status.errors))
+      } else {
+        pollRetryCount.current += 1
+        const delay = Math.min(500 * Math.pow(1.5, pollRetryCount.current), 3000)
+        setTimeout(() => pollJobStatus(jobId), delay)
+      }
+    } catch (err) {
+      setError(`Failed to check status: ${err.message}`)
+      setJobInProgress(false)
+      pollRetryCount.current = 0
+    }
+  }
+
+  async function handleStartJob() {
+    if (!selectedChairman) return
+
+    setJobInProgress(true)
+    setError(null)
+    setJobStatus(null)
+    pollRetryCount.current = 0
+    try {
+      const response = await fetch(`${API_BASE}/experiments/${experimentId}/questions/${questionId}/chairman-synthesis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question_id: questionId,
+          chairman_model: selectedChairman
+        })
+      }).then(res => {
+        if (!res.ok) {
+          return res.json().then(err => { throw new Error(err.detail || 'API error') })
+        }
+        return res.json()
+      })
+
+      setJobStatus(response)
+      startedJobIdRef.current = response.job_id
+
+      startJobStream({
+        experimentId,
+        jobId: response.job_id,
+        closeStreamRef,
+        onStatus: handleStreamStatus,
+        onError: () => {
+          pollJobStatus(response.job_id)
+        },
+      })
+    } catch (err) {
+      setError(`Failed to start synthesis: ${err.message}`)
+      setJobInProgress(false)
+    }
+  }
+
+  function handleModelToggle(modelId) {
+    setSelectedChairman(modelId)
+  }
+
+  function handleProviderFilter(provider) {
+    setSelectedProvider(prev => (prev === provider ? null : provider))
+  }
+
+  const providers = [...new Set(availableModels.map(m => m.id.split('/')[0]))]
+  const filteredModels = selectedProvider
+    ? availableModels.filter(m => m.id.startsWith(`${selectedProvider}/`))
+    : availableModels
+
+  const selectedModel = availableModels.find(m => m.id === selectedChairman)
+  const estimatedCost = selectedModel?.pricing
+    ? estimateTokenCost(
+      selectedModel.pricing,
+      Math.ceil((question?.text?.length || 0) / 4),
+      2000,
+    )
+    : 0
+
+  return (
+    <div className="fixed inset-0 bg-ink/30 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
+      <div className="card rounded-2xl w-full max-w-md max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden animate-slide-up">
+        <div className="p-6 border-b border-sepia/10 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-sepia to-rust flex items-center justify-center">
+              <Crown className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="font-display text-xl font-semibold text-ink">Chairman Synthesis</h2>
+              <p className="text-sm text-slate">Synthesize final answer from ranked responses</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {jobInProgress ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                {jobStatus?.status === 'completed' ? (
+                  <Award className="w-5 h-5 text-sage" />
+                ) : jobStatus?.status === 'failed' ? (
+                  <AlertCircle className="w-5 h-5 text-rust" />
+                ) : (
+                  <Loader className="w-5 h-5 animate-spin text-sepia" />
+                )}
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-ink">
+                    {jobStatus?.status === 'completed' ? 'Synthesis complete!' :
+                     jobStatus?.status === 'failed' ? 'Synthesis failed' :
+                     'Synthesizing final answer...'}
+                  </div>
+                  {jobStatus?.message && (
+                    <div className="text-xs text-slate">{jobStatus.message}</div>
+                  )}
+                </div>
+              </div>
+
+              {jobStatus?.errors && jobStatus.errors.length > 0 && (
+                <div className="bg-rust/5 rounded-lg p-3 border border-rust/20">
+                  <div className="text-sm font-semibold text-rust mb-1">Errors:</div>
+                  <ul className="text-xs text-rust space-y-1">
+                    {jobStatus.errors.map((err, i) => (
+                      <li key={i}>{err.message || err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate mb-2">Select Chairman Model</label>
+                {loading ? (
+                  <div className="flex items-center gap-2 text-slate">
+                    <Loader className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Loading models...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-nowrap gap-2 mb-3 overflow-x-auto pb-1">
+                      {providers.map(provider => (
+                        <button
+                          key={provider}
+                          type="button"
+                          onClick={() => handleProviderFilter(provider)}
+                          className={`text-xs px-2 py-1 rounded shrink-0 whitespace-nowrap transition-colors ${selectedProvider === provider
+                            ? 'bg-sepia text-white'
+                            : 'bg-sepia/10 hover:bg-sepia/20 text-sepia'
+                            }`}
+                        >
+                          {provider}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {filteredModels.length === 0 ? (
+                        <div className="rounded-lg border border-sepia/10 bg-sepia/5 p-3 text-sm text-slate">
+                          No models are available for this provider.
+                        </div>
+                      ) : (
+                        filteredModels.map(model => (
+                          <label
+                            key={model.id}
+                            className="flex items-center gap-2 p-2 hover:bg-sepia/5 rounded cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="radio"
+                              name="chairman-model"
+                              checked={selectedChairman === model.id}
+                              onChange={() => handleModelToggle(model.id)}
+                              className="border-sepia/30"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-ink truncate">{model.name}</span>
+                                <span className="text-xs text-slate font-mono">{model.id}</span>
+                              </div>
+                              {model.pricing && (
+                                <div className="text-xs text-slate">
+                                  {model.pricing_unknown ? (
+                                    'Variable pricing'
+                                  ) : (
+                                    <>
+                                      ${(model.pricing.prompt * 1000).toFixed(3)}/1K in ·
+                                      ${(model.pricing.completion * 1000).toFixed(3)}/1K out
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {error && (
+                <div className="bg-rust/5 rounded-lg p-3 border border-rust/20 mb-3">
+                  <p className="text-sm text-rust">{error}</p>
+                </div>
+              )}
+
+              {selectedChairman && estimatedCost > 0 && (
+                <div className="bg-sepia/5 rounded p-3 mb-3 border border-sepia/10">
+                  <div className="text-xs text-slate mb-1">
+                    Model: <span className="font-semibold text-ink">{selectedModel?.name}</span>
+                  </div>
+                  <div className="text-sm font-semibold text-ink">
+                    Estimated cost: ${estimatedCost.toFixed(4)}
+                  </div>
+                  {estimatedCost > 0.05 && (
+                    <div className="text-xs text-rust mt-1">
+                      ⚠️ Cost warning: Ensure your OpenRouter balance is sufficient.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="sticky bottom-0 flex gap-2 pt-3 bg-[var(--bg-card)]">
+                <button
+                  onClick={onClose}
+                  className="btn btn-secondary flex-1 text-sm py-1.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartJob}
+                  disabled={!selectedChairman || loading}
+                  className="btn btn-primary flex-1 text-sm py-1.5"
+                >
+                  {jobStatus?.status === 'failed' ? 'Retry Synthesis' : 'Start Synthesis'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+ChairmanSynthesisModal.propTypes = {
+  experimentId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  questionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  question: PropTypes.object.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSynthesisComplete: PropTypes.func.isRequired
 }
 
 function ExperimentView({ experimentId, onBack }) {

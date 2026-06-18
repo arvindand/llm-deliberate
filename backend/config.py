@@ -4,12 +4,14 @@ Configuration management for LLM Deliberate.
 Loads environment variables and provides model configurations for OpenRouter.
 Supports dynamic model fetching from OpenRouter's public API.
 """
-import os
+
 import asyncio
-import aiohttp
-from pathlib import Path
-from dotenv import load_dotenv
+import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import aiohttp
+from dotenv import load_dotenv
 
 # Load .env from project root
 ENV_FILE = Path(__file__).parent.parent / ".env"
@@ -37,18 +39,28 @@ def _parse_model_from_openrouter(model_data: dict) -> dict:
     """Parse OpenRouter model data into our format."""
     model_id = model_data.get("id", "")
     pricing = model_data.get("pricing", {})
+    architecture = model_data.get("architecture") or {}
 
     # Convert pricing strings to floats.
     # OpenRouter pricing fields are expressed in USD per token.
-    prompt_price = float(pricing.get("prompt", 0) or 0)
-    completion_price = float(pricing.get("completion", 0) or 0)
+    raw_prompt_price = float(pricing.get("prompt", 0) or 0)
+    raw_completion_price = float(pricing.get("completion", 0) or 0)
+    pricing_unknown = raw_prompt_price < 0 or raw_completion_price < 0
 
     return {
         "id": model_id,
         "name": model_data.get("name", model_id),
-        "provider": model_data.get("id", "").split("/")[0] if "/" in model_data.get("id", "") else "unknown",
-        "pricing": {"prompt": prompt_price, "completion": completion_price},
+        "provider": model_data.get("id", "").split("/")[0]
+        if "/" in model_data.get("id", "")
+        else "unknown",
+        "pricing": {
+            "prompt": max(0.0, raw_prompt_price),
+            "completion": max(0.0, raw_completion_price),
+        },
+        "pricing_unknown": pricing_unknown,
         "context_window": model_data.get("context_length", 4096),
+        "input_modalities": architecture.get("input_modalities") or [],
+        "output_modalities": architecture.get("output_modalities") or [],
     }
 
 
@@ -61,26 +73,30 @@ async def fetch_models_from_openrouter() -> list[dict]:
     global _models_cache, _models_cache_time
 
     # Return cached models if still fresh
-    if _models_cache is not None and _models_cache_time is not None:
-        if datetime.now(timezone.utc) - _models_cache_time < timedelta(seconds=MODELS_CACHE_TTL):
-            return _models_cache
+    if (
+        _models_cache is not None
+        and _models_cache_time is not None
+        and datetime.now(timezone.utc) - _models_cache_time < timedelta(seconds=MODELS_CACHE_TTL)
+    ):
+        return _models_cache
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{OPENROUTER_BASE_URL}/models",
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    models = data.get("data", [])
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                f"{OPENROUTER_BASE_URL}/models", timeout=aiohttp.ClientTimeout(total=10)
+            ) as response,
+        ):
+            if response.status == 200:
+                data = await response.json()
+                models = data.get("data", [])
 
-                    # Parse and cache the models
-                    parsed_models = [_parse_model_from_openrouter(m) for m in models]
-                    _models_cache = parsed_models
-                    _models_cache_time = datetime.now(timezone.utc)
+                # Parse and cache the models
+                parsed_models = [_parse_model_from_openrouter(m) for m in models]
+                _models_cache = parsed_models
+                _models_cache_time = datetime.now(timezone.utc)
 
-                    return parsed_models
+                return parsed_models
     except Exception as e:
         print(f"Error fetching models from OpenRouter: {e}")
 
@@ -98,26 +114,61 @@ def get_models_sync() -> list[dict]:
     if _models_cache is not None:
         return _models_cache
 
-    # Try to fetch asynchronously
+    # Never try to run an event loop inside an already-running event loop.
+    # Async API routes should call get_available_models_async() instead.
     try:
-        # Create new event loop if one doesn't exist in this thread
+        asyncio.get_running_loop()
+    except RuntimeError:
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            models = asyncio.run(fetch_models_from_openrouter())
+            if models:
+                return models
+        except Exception as e:
+            print(f"Error getting models synchronously: {e}")
+    else:
+        return list(DEFAULT_MODELS.values())
 
-        models = loop.run_until_complete(fetch_models_from_openrouter())
-        if models:
-            return models
-    except Exception as e:
-        print(f"Error getting models synchronously: {e}")
-
-    # Fallback to default models if fetch fails
     return list(DEFAULT_MODELS.values())
+
+
+async def get_models_async() -> list[dict]:
+    """Get fresh or cached model data without blocking the active event loop."""
+    models = await fetch_models_from_openrouter()
+    if models:
+        return models
+    if _models_cache is not None:
+        return _models_cache
+    return list(DEFAULT_MODELS.values())
+
+
+def _normalize_available_models(models: list[dict]) -> list[dict]:
+    normalized = []
+    for idx, model in enumerate(models):
+        output_modalities = model.get("output_modalities") or []
+        if output_modalities and "text" not in output_modalities:
+            continue
+
+        pricing = model.get("pricing") or {}
+        prompt_price = float(pricing.get("prompt", 0) or 0)
+        completion_price = float(pricing.get("completion", 0) or 0)
+        model_id = model.get("id") or ""
+        normalized.append(
+            {
+                "id": model_id,
+                "name": model.get("name") or model_id,
+                "provider": model.get("provider")
+                or (model_id.split("/")[0] if "/" in model_id else "unknown"),
+                "available": True,
+                "pricing": {"prompt": prompt_price, "completion": completion_price},
+                "pricing_unknown": bool(model.get("pricing_unknown")),
+                "context_window": model.get("context_window", 4096),
+                "input_modalities": model.get("input_modalities") or [],
+                "output_modalities": output_modalities,
+                # Preserve OpenRouter's ordering so the UI can show "top ranked" first.
+                "openrouter_order": idx,
+            }
+        )
+    return normalized
 
 
 # Default models as fallback (these are OpenRouter model IDs)
@@ -221,7 +272,9 @@ def estimate_cost(model_id: str, input_tokens: int, output_tokens: int) -> float
     input_per_1k = model_config.get("cost_per_1k_input")
     output_per_1k = model_config.get("cost_per_1k_output")
     if input_per_1k is not None or output_per_1k is not None:
-        return (input_tokens / 1000) * float(input_per_1k or 0) + (output_tokens / 1000) * float(output_per_1k or 0)
+        return (input_tokens / 1000) * float(input_per_1k or 0) + (output_tokens / 1000) * float(
+            output_per_1k or 0
+        )
 
     return 0.0
 
@@ -236,22 +289,9 @@ def get_available_models() -> list[dict]:
     if not models:
         models = list(DEFAULT_MODELS.values())
 
-    normalized = []
-    for idx, model in enumerate(models):
-        pricing = model.get("pricing") or {}
-        prompt_price = float(pricing.get("prompt", 0) or 0)
-        completion_price = float(pricing.get("completion", 0) or 0)
-        normalized.append(
-            {
-                "id": model.get("id"),
-                "name": model.get("name") or model.get("id"),
-                "provider": model.get("provider") or (model.get("id", "").split("/")[0] if "/" in (model.get("id") or "") else "unknown"),
-                "available": True,
-                "pricing": {"prompt": prompt_price, "completion": completion_price},
-                "context_window": model.get("context_window", 4096),
-                # Preserve OpenRouter's ordering so the UI can show "top ranked" first.
-                "openrouter_order": idx,
-            }
-        )
+    return _normalize_available_models(models)
 
-    return normalized
+
+async def get_available_models_async() -> list[dict]:
+    """Async counterpart used by FastAPI routes."""
+    return _normalize_available_models(await get_models_async())

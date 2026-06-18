@@ -3,17 +3,20 @@ LLM API client for OpenRouter integration.
 
 Handles API calls with retry logic, token counting, and cost tracking.
 """
-import httpx
+
 import time
-from typing import Any, Optional
+from typing import Any
+
+import httpx
 from pydantic import BaseModel
 from tenacity import (
+    RetryError,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    RetryError,
 )
+
 from . import config
 
 
@@ -100,12 +103,27 @@ class LLMClientError(Exception):
         super().__init__(message)
 
 
+class EmptyCompletionError(LLMClientError):
+    """Retriable error raised when a provider returns no generated text."""
+
+
 class LLMResponse(BaseModel):
     """Response from LLM API call."""
 
     content: str
     tokens_input: int
     tokens_output: int
+    latency_ms: int
+    cost_usd: float
+    model_id: str
+    provider: str
+
+
+class EmbeddingResponse(BaseModel):
+    """Response from embedding API call."""
+
+    embedding: list[float]
+    tokens_input: int
     latency_ms: int
     cost_usd: float
     model_id: str
@@ -124,7 +142,9 @@ class OpenRouterClient:
     @retry(
         stop=stop_after_attempt(config.LLM_MAX_RETRIES),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPError)),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.HTTPError, EmptyCompletionError)
+        ),
         reraise=True,
     )
     async def _call_api(
@@ -150,15 +170,32 @@ class OpenRouterClient:
             )
 
             response.raise_for_status()
+            response_json = response.json()
+
+            # OpenRouter occasionally returns a successful HTTP response with an
+            # empty completion. Retry these transient provider failures just like
+            # transport errors instead of immediately failing the whole job.
+            choice0 = extract_openrouter_choice0(response_json, model_name=model_id)
+            raw_content = extract_openrouter_message_content(choice0, model_name=model_id)
+            content = extract_text_content(raw_content)
+            if not content.strip():
+                _, tokens_output = extract_openrouter_usage_tokens(response_json)
+                finish_reason = choice0.get("finish_reason")
+                raise EmptyCompletionError(
+                    "Empty completion returned "
+                    f"(finish_reason={finish_reason}, tokens_output={tokens_output})",
+                    model=model_id,
+                )
+
             latency_ms = int((time.time() - start_time) * 1000)
-            return response.json(), latency_ms
+            return response_json, latency_ms
 
     async def generate(
         self,
         prompt: str,
         model_name: str,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ) -> LLMResponse:
         """Generate a response from the model."""
         model_config = config.get_model_config(model_name)
@@ -170,9 +207,7 @@ class OpenRouterClient:
         messages.append({"role": "user", "content": prompt})
 
         try:
-            response_json, latency_ms = await self._call_api(
-                model_id, messages, temperature
-            )
+            response_json, latency_ms = await self._call_api(model_id, messages, temperature)
         except RetryError as e:
             raise LLMClientError(
                 f"Failed to get response from {model_name} after retries",
@@ -212,16 +247,73 @@ class OpenRouterClient:
         prompts: list[str],
         model_name: str,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ) -> list[LLMResponse]:
         """Generate responses for multiple prompts concurrently."""
         import asyncio
 
         tasks = [
-            self.generate(prompt, model_name, temperature, system_prompt)
-            for prompt in prompts
+            self.generate(prompt, model_name, temperature, system_prompt) for prompt in prompts
         ]
         return await asyncio.gather(*tasks)
+
+    @retry(
+        stop=stop_after_attempt(config.LLM_MAX_RETRIES),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPError)),
+        reraise=True,
+    )
+    async def get_embedding(
+        self,
+        text: str,
+        model_id: str = "openai/text-embedding-3-small",
+    ) -> EmbeddingResponse:
+        """Get embedding vector for text using OpenRouter."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            start_time = time.time()
+
+            response = await client.post(
+                f"{self.base_url}/embeddings",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "HTTP-Referer": "https://llm-deliberate.research",
+                    "X-Title": "LLM Deliberate",
+                },
+                json={
+                    "model": model_id,
+                    "input": text,
+                },
+            )
+
+            response.raise_for_status()
+            latency_ms = int((time.time() - start_time) * 1000)
+            response_json = response.json()
+
+            data = response_json.get("data", [])
+            if not data or not isinstance(data, list):
+                raise LLMClientError(
+                    f"No embedding data returned for {model_id}",
+                    model=model_id,
+                )
+
+            embedding = data[0].get("embedding", [])
+            if not embedding:
+                raise LLMClientError(
+                    f"Empty embedding vector returned for {model_id}",
+                    model=model_id,
+                )
+
+            tokens_input = response_json.get("usage", {}).get("prompt_tokens", 0)
+            cost = config.estimate_cost(model_id, tokens_input, 0)
+
+            return EmbeddingResponse(
+                embedding=embedding,
+                tokens_input=tokens_input,
+                latency_ms=latency_ms,
+                cost_usd=cost,
+                model_id=model_id,
+                provider="openrouter",
+            )
 
 
 def create_client() -> OpenRouterClient:
