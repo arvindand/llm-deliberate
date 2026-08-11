@@ -1,3 +1,5 @@
+
+
 # LLM Deliberate
 
 **An experimentation tool for exploring multi-model LLM deliberation and aggregation methods.**
@@ -160,7 +162,7 @@ After starting the app, test these features:
 | Evolution View | Multi-round question → Toggle "Evolution" |
 | Agreement Heatmap | Rankings → "View Agreement" button |
 | Chairman Synthesis | Rankings → "Synthesize Final Answer" button |
-| Debate API | Open `/docs` → `POST /experiments/{id}/automate/debate` |
+| Debate API | Open `http://localhost:8000/docs` → `POST /experiments/{id}/automate/debate` |
 
 ## Testing
 
