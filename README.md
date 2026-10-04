@@ -433,6 +433,25 @@ POST /experiments/{id}/compute
 GET /experiments/{id}/questions/{qid}/agreement
 ```
 
+`compute` and `compare` scores are keyed by **response ID**. `response_labels`
+maps each ID to its model, round, and ID so repeated samples stay distinct.
+Every method returns `winner_ids`, a nullable singular winner, and `status`.
+`compare.winner` is a response ID; `compute.winner` retains its response object
+for a unique winner and is `null` otherwise. `compute.raw_scores` remains an
+alias of the ID-keyed scores. Clients that previously used model-keyed `scores`
+or model names in `compare.winner` must use `response_labels` for display.
+Saved experiment files require no migration.
+
+A score tie returns all top response IDs with `status: "tie"`. An IRV
+elimination tie instead returns `status: "unresolved"`, no elected winner IDs,
+and `details.remaining_ids`. `unanimous` requires every method to elect the same
+single response; agreement on a model name or an unresolved count does not qualify.
+The score-only Python helpers `get_winner` and `get_winners` return a unique
+top ID (or `None` for a tie) and every top ID, respectively. They cannot infer
+whether an IRV count stopped unresolved from scores alone. Use
+`aggregate_rankings` for count status and elected winner IDs. `method_agreement`
+now maps methods to winner-ID lists (empty for an unresolved count).
+
 ### Export
 
 ```bash
@@ -472,6 +491,13 @@ For each pair of candidates, count who is preferred by more judges. A Condorcet 
 
 Locks in pairwise preferences from strongest to weakest, skipping any that would create a cycle. Handles Condorcet paradoxes gracefully.
 
+The winner is an undefeated root of the locked graph that appears on at least
+one ballot. Scores indicate eligibility (`1` ranked and undefeated, `0` defeated
+or unranked), rather than counting outgoing victories. Responses added after
+judging cannot win without being ranked. Equal margins use winner-ID then
+loser-ID order; tied-strength cycles can depend on that explicit tiebreak.
+Multiple eligible undefeated roots are reported as tied.
+
 ### Schulze Method
 
 Computes the strongest path between all candidate pairs using the Floyd-Warshall algorithm. Handles Condorcet cycles elegantly by finding the candidate with the strongest indirect comparisons.
@@ -481,6 +507,12 @@ Computes the strongest path between all candidate pairs using the Floyd-Warshall
 ### STV / Instant Runoff
 
 Eliminates the lowest-ranked candidate each round, transferring votes to voters' next choices. Used in Australian federal elections and many other jurisdictions worldwide.
+
+This implementation removes zero-vote candidates together, but stops if a
+positive-vote minimum is tied. Choosing an elimination order or removing all
+tied contenders can change the result, so the remaining candidates are reported
+as unresolved rather than elected. Its scores describe outcome eligibility,
+not first-place vote totals or a complete ranking.
 
 ### Approval Voting
 

@@ -20,16 +20,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.aggregation import (
-    approval_voting,
-    borda_count,
-    copeland_score,
+    AggregationResult,
+    aggregate_rankings,
     diversity_score,
-    get_winner,
-    plurality,
-    ranked_pairs,
-    schulze_method,
-    stv_instant_runoff,
-    weighted_borda,
 )
 from backend.models import Experiment, Question, QuestionType, Ranking, Response
 
@@ -166,27 +159,32 @@ def _find_question(exp: Experiment, question_id: str) -> Question | None:
     return None
 
 
-def _print_method_scores(
-    name: str, scores: dict[str, float], id_to_model: dict[str, str], winner_id: str
-) -> None:
+def _print_method_scores(name: str, result: AggregationResult, labels: dict[str, str]) -> None:
     """Print scores for a single aggregation method."""
     print(f"   {name}:")
-    for cid, score in sorted(scores.items(), key=lambda x: -x[1]):
-        model = id_to_model.get(cid, cid)
+    if result.details["status"] == "unresolved":
+        print("      Unresolved: elimination tie; remaining candidates are not elected.")
+    elif len(result.winner_ids) > 1:
+        print(f"      Tie: {'; '.join(labels[cid] for cid in result.winner_ids)}")
+    if result.details.get("score_semantics"):
+        print(f"      Scores: {result.details['score_semantics']}")
+    if result.details.get("edge_tiebreak"):
+        print(f"      Edge ties: {result.details['edge_tiebreak']}")
+    for cid, score in sorted(result.scores.items(), key=lambda x: -x[1]):
+        model = labels.get(cid, cid)
         bar = "█" * int(score * 2) if score > 0 else ""
-        marker = " 🏆" if cid == winner_id else ""
+        marker = " 🏆" if cid == result.winner else ""
         print(f"      {model:<15} {score:>5.1f} {bar}{marker}")
     print()
 
 
-def _print_unanimity(winners: list[str], methods: dict) -> None:
+def _print_unanimity(results: dict[str, AggregationResult], labels: dict[str, str]) -> None:
     """Print unanimity or disagreement status."""
-    if len(set(winners)) == 1:
-        print(f"   ✅ UNANIMOUS: All methods agree on {winners[0]}")
+    winners = [result.winner for result in results.values()]
+    if all(winner is not None for winner in winners) and len(set(winners)) == 1:
+        print(f"   ✅ UNANIMOUS: All methods agree on {labels[winners[0]]}")
     else:
-        print("   ⚠️  SPLIT: Methods disagree")
-        for name, winner in zip(methods.keys(), winners, strict=True):
-            print(f"      {name}: {winner}")
+        print("   No unanimous unique response winner (ties/unresolved counts included).")
 
 
 def cmd_compare(args):
@@ -203,32 +201,30 @@ def cmd_compare(args):
         sys.exit(1)
 
     candidates = [r.id for r in question.responses]
-    id_to_model = {r.id: r.model for r in question.responses}
+    labels = {r.id: f"{r.model} · round {r.round} · {r.id}" for r in question.responses}
 
     print(f"\n📊 Comparison for: {question.text[:60]}...")
     print(f"   Responses: {len(question.responses)} | Rankings: {len(question.rankings)}")
     print()
 
     methods = {
-        "Plurality": plurality,
-        "Borda Count": borda_count,
-        "Weighted Borda": weighted_borda,
-        "Copeland": copeland_score,
-        "Ranked Pairs": ranked_pairs,
-        "Schulze": schulze_method,
-        "STV / Instant Runoff": stv_instant_runoff,
-        "Approval": approval_voting,
+        "Plurality": "plurality",
+        "Borda Count": "borda",
+        "Weighted Borda": "weighted_borda",
+        "Copeland": "copeland",
+        "Ranked Pairs": "ranked_pairs",
+        "Schulze": "schulze",
+        "STV / Instant Runoff": "stv",
+        "Approval": "approval",
     }
 
-    winners = []
+    results = {}
     for name, method in methods.items():
-        scores = method(question.rankings, candidates)
-        winner_id = get_winner(scores)
-        winner_model = id_to_model.get(winner_id, winner_id)
-        winners.append(winner_model)
-        _print_method_scores(name, scores, id_to_model, winner_id)
+        result = aggregate_rankings(method, question.rankings, candidates)
+        results[name] = result
+        _print_method_scores(name, result, labels)
 
-    _print_unanimity(winners, methods)
+    _print_unanimity(results, labels)
 
     # Diversity score
     div = diversity_score(question.rankings, candidates)

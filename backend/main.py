@@ -20,15 +20,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import automation, config
 from .aggregation import (
-    approval_voting,
-    borda_count,
-    copeland_score,
-    get_winner,
-    plurality,
-    ranked_pairs,
-    schulze_method,
-    stv_instant_runoff,
-    weighted_borda,
+    AGGREGATION_METHODS,
+    aggregate_rankings,
 )
 from .models import (
     Experiment,
@@ -449,45 +442,37 @@ def compute_results(experiment_id: str, req: ComputeResultsRequest):
     # Get candidate IDs (response IDs)
     candidates = [r.id for r in question.responses]
 
-    # Map method name to function
-    methods = {
-        "borda": borda_count,
-        "weighted_borda": weighted_borda,
-        "copeland": copeland_score,
-        "plurality": plurality,
-        "ranked_pairs": ranked_pairs,
-        "schulze": schulze_method,
-        "stv": stv_instant_runoff,
-        "approval": approval_voting,
-    }
-
-    if req.method not in methods:
+    if req.method not in AGGREGATION_METHODS:
         raise HTTPException(status_code=400, detail=f"Unknown method: {req.method}")
 
-    # Compute scores
-    scores = methods[req.method](question.rankings, candidates)
-    winner_id = get_winner(scores)
-
-    # Find the winning response
-    winner_response = None
-    for r in question.responses:
-        if r.id == winner_id:
-            winner_response = r
-            break
-
-    # Build response ID to model mapping
-    id_to_model = {r.id: r.model for r in question.responses}
+    result = aggregate_rankings(req.method, question.rankings, candidates)
+    winner_response = question.get_response_by_id(result.winner) if result.winner else None
 
     return {
         "method": req.method,
-        "scores": {id_to_model.get(k, k): v for k, v in scores.items()},
-        "winner": {
-            "id": winner_id,
-            "model": winner_response.model if winner_response else None,
-            "content": winner_response.content if winner_response else None,
-        },
-        "raw_scores": scores,
+        "scores": result.scores,
+        "response_labels": response_labels(question.responses),
+        "winner_id": result.winner,
+        "winner_ids": result.winner_ids,
+        "status": result.details["status"],
+        "details": result.details,
+        "winner": (
+            {
+                "id": winner_response.id,
+                "model": winner_response.model,
+                "content": winner_response.content,
+            }
+            if winner_response
+            else None
+        ),
+        # Retain the old response-ID score alias for existing compute clients.
+        "raw_scores": result.scores,
     }
+
+
+def response_labels(responses: list[Response]) -> dict[str, str]:
+    """Keep model names readable while distinguishing samples and rounds."""
+    return {r.id: f"{r.model} · round {r.round} · {r.id}" for r in responses}
 
 
 @app.get("/experiments/{experiment_id}/compare")
@@ -509,36 +494,27 @@ def compare_all_methods(experiment_id: str, question_id: str):
         raise HTTPException(status_code=400, detail="No rankings available")
 
     candidates = [r.id for r in question.responses]
-    id_to_model = {r.id: r.model for r in question.responses}
-
-    methods = {
-        "borda": borda_count,
-        "weighted_borda": weighted_borda,
-        "copeland": copeland_score,
-        "plurality": plurality,
-        "ranked_pairs": ranked_pairs,
-        "schulze": schulze_method,
-        "stv": stv_instant_runoff,
-        "approval": approval_voting,
-    }
 
     results = {}
-    for method_name, method_fn in methods.items():
-        scores = method_fn(question.rankings, candidates)
-        winner_id = get_winner(scores)
+    for method_name in AGGREGATION_METHODS:
+        result = aggregate_rankings(method_name, question.rankings, candidates)
         results[method_name] = {
-            "scores": {id_to_model.get(k, k): v for k, v in scores.items()},
-            "winner": id_to_model.get(winner_id, winner_id),
+            "scores": result.scores,
+            "winner": result.winner,
+            "winner_ids": result.winner_ids,
+            "status": result.details["status"],
+            "details": result.details,
         }
 
-    # Check agreement
+    # Agreement requires a shared unique response, not a shared model label or tie.
     winners = [r["winner"] for r in results.values()]
-    unanimous = len(set(winners)) == 1
+    unanimous = all(winner is not None for winner in winners) and len(set(winners)) == 1
 
     return {
         "question_id": question_id,
         "question_text": question.text,
         "methods": results,
+        "response_labels": response_labels(question.responses),
         "unanimous": unanimous,
         "ground_truth": question.ground_truth,
     }

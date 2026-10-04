@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { AutomatedResponseForm, AutomatedRankingForm, ResponseCard, AutomatedDeliberationForm, MarkdownRenderer, TabbedRoundView, AgreementMatrixHeatmap, DeliberationEvolutionView } from './components'
 import { estimateTokenCost } from './costs'
+import { outcomeLabel, responseLabel, scoreRows, scoreWidth } from './aggregationResults'
 
 const API_BASE = '/api'
 
@@ -942,6 +943,7 @@ function ComparisonResults({ results, onClose }) {
   }
 
   const maxScore = Math.max(
+    0,
     ...Object.values(results.methods).flatMap(m => Object.values(m.scores))
   )
 
@@ -966,32 +968,43 @@ function ComparisonResults({ results, onClose }) {
           <div className="space-y-6">
             {Object.entries(results.methods).map(([method, data]) => (
               <div key={method} className="p-4 bg-parchment/30 rounded-xl">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-3">
                   <h3 className="font-display font-semibold text-ink">{methodNames[method]}</h3>
-                  <div className="flex items-center gap-2">
-                    <Award className="w-4 h-4 text-sepia" />
-                    <span className="font-medium text-sepia">{data.winner}</span>
+                  <div className="flex items-start gap-2 sm:max-w-[65%]">
+                    <Award className="w-4 h-4 text-sepia shrink-0 mt-1" />
+                    <span className="font-medium text-sepia break-words">{outcomeLabel(data, results.response_labels)}</span>
                   </div>
                 </div>
+                {data.status === 'unresolved' && (
+                  <p className="text-xs text-slate mb-3">
+                    Counting stopped because eliminating tied candidates could change the outcome.
+                    Remaining: {data.details.remaining_ids.map(id => responseLabel(id, results.response_labels)).join('; ')}.
+                  </p>
+                )}
+                {data.details?.score_semantics && (
+                  <p className="text-xs text-slate mb-3">Scores: {data.details.score_semantics}.</p>
+                )}
+                {data.details?.edge_tiebreak && (
+                  <p className="text-xs text-slate mb-3">Edge ties: {data.details.edge_tiebreak}. Tied-strength cycles can depend on this rule.</p>
+                )}
                 <div className="space-y-2">
-                  {Object.entries(data.scores)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([model, score], i) => (
-                      <div key={model} className="flex items-center gap-3">
+                  {scoreRows(data.scores, results.response_labels)
+                    .map(({ id, label, score, rank }) => (
+                      <div key={id} className="flex items-center gap-3">
                         {(() => {
                           const classes = ['gold', 'silver', 'bronze']
-                          const rankClass = classes[i] || 'bronze'
+                          const rankClass = classes[rank - 1] || 'bronze'
                           return (
                             <span className={`rank-badge ${rankClass}`}>
-                              {i + 1}
+                              {rank}
                             </span>
                           )
                         })()}
-                        <span className="w-28 text-sm font-medium truncate">{model}</span>
+                        <span className="w-40 text-sm font-medium break-words" title={label}>{label}</span>
                         <div className="flex-1 score-bar">
                           <div
                             className="score-bar-fill"
-                            style={{ width: `${(score / maxScore) * 100}%` }}
+                            style={{ width: `${scoreWidth(score, maxScore)}%` }}
                           />
                         </div>
                         <span className="w-12 text-right text-sm font-mono text-slate">
@@ -1877,8 +1890,12 @@ const comparisonResultsShape = PropTypes.shape({
   question_text: PropTypes.string,
   unanimous: PropTypes.bool,
   ground_truth: PropTypes.string,
+  response_labels: PropTypes.objectOf(PropTypes.string),
   methods: PropTypes.objectOf(PropTypes.shape({
     winner: PropTypes.string,
+    winner_ids: PropTypes.arrayOf(PropTypes.string),
+    status: PropTypes.string,
+    details: PropTypes.object,
     scores: PropTypes.objectOf(PropTypes.number)
   }))
 })

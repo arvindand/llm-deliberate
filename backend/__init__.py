@@ -1,6 +1,7 @@
 """LLM Deliberate - Research tool for multi-model deliberation."""
 
 from .aggregation import (
+    aggregate_rankings,
     agreement_matrix,
     approval_voting,
     borda_count,
@@ -8,6 +9,7 @@ from .aggregation import (
     diversity_score,
     get_ranking,
     get_winner,
+    get_winners,
     method_agreement,
     plurality,
     ranked_pairs,
@@ -34,6 +36,8 @@ __all__ = [
     "stv_instant_runoff",
     "approval_voting",
     "get_winner",
+    "get_winners",
+    "aggregate_rankings",
     "get_ranking",
     "agreement_matrix",
     "method_agreement",

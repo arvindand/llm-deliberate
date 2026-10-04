@@ -12,6 +12,7 @@ References:
 
 from collections import Counter
 from dataclasses import dataclass
+from math import isclose
 
 from .models import Ranking
 
@@ -22,7 +23,8 @@ class AggregationResult:
 
     method: str
     scores: dict[str, float]
-    winner: str
+    winner: str | None
+    winner_ids: list[str]
     details: dict | None = None
 
 
@@ -216,7 +218,12 @@ def ranked_pairs(rankings: list[Ranking], candidates: list[str]) -> dict[str, fl
     Pros: Condorcet method that handles cycles gracefully
     Cons: More complex to explain and implement
 
-    For simplicity, we return a score based on the final ordering.
+    Scores mark eligible locked-graph roots: 1 for an undefeated candidate that
+    appears on at least one ballot, 0 otherwise. A response added after judging
+    is unranked, not undefeated, and cannot win without being ranked.
+    Counting outgoing victories would incorrectly favor some defeated candidates.
+    Equal-margin edges use response-ID order as an explicit deterministic tiebreak;
+    the winner can depend on that order when a tied-strength cycle exists.
     """
     # Build pairwise preference matrix
     pref = _build_preference_matrix(rankings, candidates)
@@ -225,17 +232,17 @@ def ranked_pairs(rankings: list[Ranking], candidates: list[str]) -> dict[str, fl
     pairs = _calculate_margin_pairs(candidates, pref)
 
     # Sort by margin (strongest first)
-    pairs.sort(key=lambda x: x[2], reverse=True)
+    pairs.sort(key=lambda pair: (-pair[2], pair[0], pair[1]))
 
     # Lock pairs, avoiding cycles
     locked = _lock_pairs_without_cycles(pairs)
 
-    # Score based on locked victories
-    scores = dict.fromkeys(candidates, 0.0)
-    for winner, _loser in locked:
-        scores[winner] += 1
-
-    return scores
+    defeated = {loser for _winner, loser in locked}
+    ranked_candidates = {candidate for ranking in rankings for candidate in ranking.rankings}
+    return {
+        candidate: (1.0 if candidate in ranked_candidates and candidate not in defeated else 0.0)
+        for candidate in candidates
+    }
 
 
 def schulze_method(rankings: list[Ranking], candidates: list[str]) -> dict[str, float]:
@@ -296,15 +303,27 @@ def stv_instant_runoff(rankings: list[Ranking], candidates: list[str]) -> dict[s
     Algorithm:
     1. Count first-place votes
     2. If candidate has majority, they win
-    3. Else eliminate candidate with fewest first-place votes
+    3. Else eliminate the unique candidate with fewest first-place votes
     4. Transfer their votes to next preference
     5. Repeat until winner found
 
     Pros: Reduces strategic voting, ensures majority support
     Cons: Non-monotonic (getting more votes can hurt), complex tallying
+
+    An unresolved positive-vote elimination tie stops the count. Remaining
+    candidates are survivors of an unresolved count, with no elected winner.
+    Removing zero-vote candidates is safe. These scores mark outcome eligibility,
+    not vote totals or a full ordering; use aggregate_rankings for count status.
     """
+    return _instant_runoff_result(rankings, candidates)[0]
+
+
+def _instant_runoff_result(
+    rankings: list[Ranking], candidates: list[str]
+) -> tuple[dict[str, float], dict]:
+    """Count IRV while retaining the reason an unresolved count stopped."""
     if not candidates or not rankings:
-        return dict.fromkeys(candidates, 0.0)
+        return dict.fromkeys(candidates, 0.0), {"status": "no_ballots"}
 
     active_candidates = set(candidates)
     round_num = 0
@@ -322,7 +341,7 @@ def stv_instant_runoff(rankings: list[Ranking], candidates: list[str]) -> dict[s
 
         total_votes = sum(first_place_counts.values())
         if total_votes == 0:
-            break
+            return dict.fromkeys(candidates, 0.0), {"status": "no_ballots"}
 
         for cand, count in first_place_counts.items():
             if count > total_votes / 2:
@@ -333,18 +352,35 @@ def stv_instant_runoff(rankings: list[Ranking], candidates: list[str]) -> dict[s
                         scores[other_c] = float(len(candidates) - round_num)
                 for elim_c in set(candidates) - active_candidates:
                     scores[elim_c] = 0.0
-                return scores
+                return scores, {"status": "complete"}
 
         min_votes = min(first_place_counts.values())
         to_eliminate = [c for c, count in first_place_counts.items() if count == min_votes]
+        if len(to_eliminate) == len(active_candidates) or (min_votes > 0 and len(to_eliminate) > 1):
+            # No arbitrary ballot/candidate-order tiebreak is defined here.
+            scores = {
+                c: (float(len(candidates)) if c in active_candidates else 0.0) for c in candidates
+            }
+            return scores, {
+                "status": "unresolved",
+                "reason": "elimination_tie",
+                "round": round_num,
+                "remaining_ids": [c for c in candidates if c in active_candidates],
+                "tied_for_elimination": [c for c in candidates if c in to_eliminate],
+                "first_place_votes": {
+                    c: first_place_counts[c] for c in candidates if c in active_candidates
+                },
+            }
         for c in to_eliminate:
             active_candidates.remove(c)
 
     if len(active_candidates) == 1:
         winner = list(active_candidates)[0]
-        return {c: (float(len(candidates)) if c == winner else 0.0) for c in candidates}
+        return {c: (float(len(candidates)) if c == winner else 0.0) for c in candidates}, {
+            "status": "complete"
+        }
 
-    return dict.fromkeys(candidates, 0.0)
+    return dict.fromkeys(candidates, 0.0), {"status": "no_ballots"}
 
 
 def approval_voting(
@@ -382,16 +418,75 @@ def approval_voting(
     return approvals
 
 
-def get_winner(scores: dict[str, float]) -> str:
-    """Get the candidate with the highest score."""
+def get_winners(scores: dict[str, float]) -> list[str]:
+    """Return every top-scoring candidate, without a candidate-order tiebreak."""
     if not scores:
-        return ""
-    return max(scores.keys(), key=lambda k: scores[k])
+        return []
+    best_score = max(scores.values())
+    return [
+        candidate
+        for candidate, score in scores.items()
+        if isclose(score, best_score, rel_tol=1e-9, abs_tol=1e-9)
+    ]
+
+
+def get_winner(scores: dict[str, float]) -> str | None:
+    """Return a unique winner, or None when the result is tied/empty."""
+    winners = get_winners(scores)
+    return winners[0] if len(winners) == 1 else None
 
 
 def get_ranking(scores: dict[str, float]) -> list[str]:
     """Get candidates sorted by score (best first)."""
     return sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
+
+
+AGGREGATION_METHODS = {
+    "plurality": plurality,
+    "borda": borda_count,
+    "weighted_borda": weighted_borda,
+    "copeland": copeland_score,
+    "ranked_pairs": ranked_pairs,
+    "schulze": schulze_method,
+    "stv": stv_instant_runoff,
+    "approval": approval_voting,
+}
+
+
+def aggregate_rankings(
+    method: str, rankings: list[Ranking], candidates: list[str]
+) -> AggregationResult:
+    """Compute a result with response identities and explicit tie/count status."""
+    if method == "stv":
+        scores, details = _instant_runoff_result(rankings, candidates)
+        details["score_semantics"] = "outcome eligibility, not first-place vote totals"
+    else:
+        scores = AGGREGATION_METHODS[method](rankings, candidates)
+        details = {}
+        if method == "ranked_pairs":
+            details.update(
+                score_semantics="1 = ranked and undefeated in the locked graph; 0 = defeated or unranked",
+                edge_tiebreak="equal margins ordered by winner ID, then loser ID",
+            )
+            if not any(scores.values()):
+                details["status"] = "no_ballots"
+
+    winner_ids = (
+        []
+        if not rankings or details.get("status") in {"unresolved", "no_ballots"}
+        else get_winners(scores)
+    )
+    if "status" not in details or details["status"] == "complete":
+        details["status"] = (
+            "winner" if len(winner_ids) == 1 else "tie" if winner_ids else "no_ballots"
+        )
+    return AggregationResult(
+        method=method,
+        scores=scores,
+        winner=winner_ids[0] if len(winner_ids) == 1 else None,
+        winner_ids=winner_ids,
+        details=details,
+    )
 
 
 # === Analysis Utilities ===
@@ -451,24 +546,17 @@ def agreement_matrix(rankings: list[Ranking], candidates: list[str]) -> dict[str
     return matrix
 
 
-def method_agreement(rankings: list[Ranking], candidates: list[str]) -> dict[str, str]:
+def method_agreement(rankings: list[Ranking], candidates: list[str]) -> dict[str, list[str]]:
     """
     Check which aggregation methods agree on the winner.
 
-    Returns dict mapping method name to winner.
+    Returns dict mapping method name to elected winner response IDs, including
+    score ties. An unresolved count has an empty winner list.
     """
-    methods = {
-        "plurality": plurality,
-        "borda": borda_count,
-        "weighted_borda": weighted_borda,
-        "copeland": copeland_score,
-        "ranked_pairs": ranked_pairs,
-        "schulze": schulze_method,
-        "stv": stv_instant_runoff,
-        "approval": approval_voting,
+    return {
+        name: aggregate_rankings(name, rankings, candidates).winner_ids
+        for name in AGGREGATION_METHODS
     }
-
-    return {name: get_winner(method(rankings, candidates)) for name, method in methods.items()}
 
 
 def diversity_score(rankings: list[Ranking], candidates: list[str]) -> float:
