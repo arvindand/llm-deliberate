@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -70,6 +71,20 @@ def cmd_list(args):
         with open(path) as f:
             data = json.load(f)
         print(f"{data['id']:<10} {data['name'][:28]:<30} {len(data.get('questions', [])):<10}")
+
+
+def cmd_import(args):
+    """Restore an exported experiment without replacing an existing one."""
+    try:
+        experiment = Experiment.model_validate_json(Path(args.path).read_text(encoding="utf-8"))
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", experiment.id):
+            raise ValueError("experiment ID must be a simple filename identifier")
+        with (DATA_DIR / f"{experiment.id}.json").open("x", encoding="utf-8") as destination:
+            destination.write(experiment.model_dump_json(indent=2))
+    except (OSError, ValueError) as error:
+        print(f"Could not import experiment: {error}", file=sys.stderr)
+        raise SystemExit(1) from None
+    print(f"Imported experiment: {experiment.id} ({experiment.name})")
 
 
 def cmd_show(args):
@@ -316,6 +331,10 @@ def main():
         description="LLM Deliberate CLI", formatter_class=argparse.RawDescriptionHelpFormatter
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    p = subparsers.add_parser("import", help="Restore a JSON experiment export without overwriting")
+    p.add_argument("path", help="Path to an exported experiment JSON file")
+    p.set_defaults(func=cmd_import)
 
     # new
     p = subparsers.add_parser("new", help="Create new experiment")
