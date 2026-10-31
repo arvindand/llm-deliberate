@@ -164,6 +164,22 @@ After starting the app, test these features:
 | Chairman Synthesis | Rankings → "Synthesize Final Answer" button |
 | Debate API | Open `http://localhost:8000/docs` → `POST /experiments/{id}/automate/debate` |
 
+## Reproducing an experiment
+
+Download a full experiment with `GET /experiments/{id}/export?format=json`,
+then restore the JSON on another checkout:
+
+```bash
+uv run deliberate import /path/to/export.json
+uv run deliberate show <experiment-id>
+```
+
+The import retains question/response IDs, model names, rounds, rankings and
+recorded cost/token metadata. It refuses to overwrite an existing experiment.
+It reproduces the recorded data and voting results; a fresh model run may differ.
+The bundled `data/experiments/demo_showcase.json` can also be imported into a
+checkout that does not already contain that experiment, without an API key.
+
 ## Testing
 
 ```bash
